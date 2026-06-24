@@ -75,5 +75,5 @@ lv_disp_t *ui_lvgl_get_display(void)
 
 void ui_lvgl_start_task(void)
 {
-    xTaskCreatePinnedToCore(lvgl_task, "lv_task", 4096, NULL, 3, NULL, 1);
+    xTaskCreatePinnedToCore(lvgl_task, "lv_task", 4096, NULL, 3, NULL, 0);
 }
