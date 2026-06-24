@@ -1,0 +1,21 @@
+# Build
+build/
+*.bin
+*.elf
+*.map
+*.hex
+
+# IDE
+.vscode/
+.idea/
+
+# SDK config backup
+sdkconfig.old
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
