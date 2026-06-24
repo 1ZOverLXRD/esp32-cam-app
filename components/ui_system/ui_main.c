@@ -48,50 +48,19 @@ static void cancel_exit(void);
 #define STEP_X       160
 #define CARD_TOP     30
 
-/* 动画完成回调：延迟删除避免LVGL事件冲突 */
-/* 退出清理回调（异步执行，不在动画timer中） */
-static void do_exit_cleanup(void *arg)
-{
-    (void)arg;
-    s_exit_cleanup_pending = false;
-    close_current_app();
-}
-
+/* 动画完成回调：只设标志不做删除 */
 static void exit_arc_ready_cb(lv_anim_t *a)
 {
     (void)a;
     s_exit_animating = false;
-    if (!s_exit_cleanup_pending) {
-        s_exit_cleanup_pending = true;
-        lv_async_call(do_exit_cleanup, NULL);
-    }
+    s_exit_cleanup_pending = true;
 }
 
-/* APP退出淡出完成回调 */
-static void exit_app_close_cb(lv_anim_t *a)
-{
-    (void)a;
-    if (s_app_page) {
-        lv_obj_del(s_app_page);
-        s_app_page = NULL;
-    }
-    if (s_exit_overlay) {
-        lv_obj_del(s_exit_overlay);
-        s_exit_overlay = NULL;
-        s_exit_arc = NULL;
-    }
-    s_exit_animating = false;
-}
-
-/* 取消长按退出 - 淡出回调 */
+/* 取消长按退出 - 淡出回调（只设标志不做删除） */
 static void cancel_exit_fade_done(lv_anim_t *a)
 {
     (void)a;
-    if (s_exit_overlay) {
-        lv_obj_del(s_exit_overlay);
-        s_exit_overlay = NULL;
-        s_exit_arc = NULL;
-    }
+    s_exit_animating = false;
 }
 
 /* 取消长按退出 */
@@ -100,6 +69,7 @@ static void cancel_exit(void)
     if (!s_exit_animating) return;
     s_exit_animating = false;
     if (s_exit_overlay) {
+        /* 直接淡出+删除（当前在摇杆任务上下文，安全） */
         lv_anim_t a;
         lv_anim_init(&a);
         lv_anim_set_var(&a, s_exit_overlay);
@@ -352,6 +322,13 @@ static void open_current_app(void)
 
 void ui_main_handle_joystick(joystick_evt_t evt)
 {
+    /* 检测待处理的退出清理 */
+    if (s_exit_cleanup_pending) {
+        close_current_app();
+        s_exit_cleanup_pending = false;
+        return;
+    }
+
     /* 在APP内时，将事件分发给当前APP */
     if (s_is_open) {
         /* 长按退出APP（全局行为） */
