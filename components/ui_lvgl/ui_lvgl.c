@@ -62,7 +62,6 @@ esp_err_t ui_lvgl_init(void)
     s_disp = lv_disp_drv_register(&disp_drv);
 
     xTaskCreatePinnedToCore(lvgl_tick_task, "lv_tick", 2048, NULL, 1, NULL, 1);
-    // lv_task 启动移到 ui_main_menu_init 之后（防止刷新访问未创建完的卡片）
 
     ESP_LOGI(TAG, "LVGL initialized: %dx%d, full_refresh PSRAM buffer",
                  LCD_WIDTH, LCD_HEIGHT);
@@ -76,5 +75,5 @@ lv_disp_t *ui_lvgl_get_display(void)
 
 void ui_lvgl_start_task(void)
 {
-    xTaskCreatePinnedToCore(lvgl_task, "lv_task", 4096, NULL, 3, NULL, 0);
+    xTaskCreatePinnedToCore(lvgl_task, "lv_task", 4096, NULL, 3, NULL, 1);
 }
