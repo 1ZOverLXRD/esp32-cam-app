@@ -162,7 +162,7 @@ static lv_obj_t *create_card(int real_idx)
 {
     lv_obj_t *card = lv_obj_create(lv_scr_act());
     lv_obj_set_size(card, CARD_BIG_W, CARD_BIG_H);
-    lv_obj_set_style_radius(card, 16, LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(card, 8, LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(card, lv_color_hex(APP_COLORS[real_idx]), LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(card, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_shadow_width(card, 0, LV_STATE_DEFAULT);
