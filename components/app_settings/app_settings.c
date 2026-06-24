@@ -8,7 +8,6 @@ static lv_obj_t *s_page = NULL;
 
 static int s_selected = 0;
 static lv_obj_t *s_items[ITEM_COUNT] = {NULL};
-static lv_obj_t *s_hint = NULL;
 
 static void set_item_style(int idx, int selected)
 {
@@ -81,12 +80,6 @@ static void on_create(lv_obj_t *parent)
     s_selected = 0;
     set_item_style(0, 1);  // 初始化高亮第一项
 
-    lv_obj_t *hint = lv_label_create(s_page);
-    lv_label_set_text(hint, "UP/DOWN select  PRESS enter");
-    lv_obj_set_style_text_color(hint, lv_color_make(120, 120, 140), LV_STATE_DEFAULT);
-    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -10);
-    s_hint = hint;
-
     ESP_LOGI(TAG, "Settings app created");
 }
 
@@ -94,7 +87,6 @@ static void on_destroy(void)
 {
     for (int i = 0; i < ITEM_COUNT; i++) s_items[i] = NULL;
     s_selected = 0;
-    s_hint = NULL;
     s_page = NULL;
 }
 
