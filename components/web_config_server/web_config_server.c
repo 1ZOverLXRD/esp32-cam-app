@@ -15,7 +15,6 @@ static const char *TAG = "WEB_CFG";
 static httpd_handle_t s_server = NULL;
 extern bool s_wifi_connected;
 extern char s_sta_ip[16];
-extern bool s_wifi_switching;
 extern void update_wifi_info(void);
 extern volatile bool s_wifi_ui_pending;
 
@@ -30,7 +29,6 @@ static void sta_switch_timer_cb(TimerHandle_t xTimer)
         s_server = NULL;
     }
 
-    s_wifi_switching = true;  // 阻止虚假断开重置 connected 标志
     esp_wifi_set_mode(WIFI_MODE_STA);
     esp_wifi_connect();
 

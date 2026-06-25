@@ -258,19 +258,9 @@ static void collapse_arc_ready(lv_anim_t *a)
 void update_wifi_info(void)
 {
     section_t *sec = &s_sections[1];  // WiFi Info 固定 index=1
-    if (!sec->header) {
-        /* 标记：无法隐藏（Settings未打开）*/
-        if (s_page && s_wifi_connected) {
-            lv_obj_t *title = lv_obj_get_child(s_page, 0);
-            if (title) lv_label_set_text(title, "[OFFLINE]");
-        }
-        return;
-    }
+    if (!sec->header) return;
 
     if (s_wifi_connected) {
-        /* 表头改色标记函数已执行 */
-        if (sec->hdr_label)
-            lv_label_set_text(sec->hdr_label, ">WiFi OK<");
         if (sec->sub_items[0]) {
             lv_obj_t *lbl = lv_obj_get_child(sec->sub_items[0], 0);
             if (lbl) lv_label_set_text(lbl, "Status:  Connected");

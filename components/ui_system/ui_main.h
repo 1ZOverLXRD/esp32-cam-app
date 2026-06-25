@@ -12,7 +12,6 @@
 /* WiFi 连接状态（由 main.c 的 WiFi 事件回调设置） */
 extern bool s_wifi_connected;
 extern char s_sta_ip[16];
-extern bool s_wifi_switching;       // 切模式中忽略虚假断开
 extern volatile bool s_wifi_ui_pending;  // 需要更新WiFi Info UI
 
 void ui_main_menu_init(void);
