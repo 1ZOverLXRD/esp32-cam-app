@@ -262,21 +262,25 @@ void update_wifi_info(void)
 
     if (s_wifi_connected) {
         int base_y = lv_obj_get_y(sec->header) + HEADER_H + ITEM_GAP;
-        /* 先全部隐藏并堆叠到同一区域 */
+        /* 全部项重叠压缩到同一位置，高度=0 */
         for (int j = 0; j < 3 && j < sec->sub_count; j++) {
             if (sec->sub_items[j]) {
-                lv_obj_set_y(sec->sub_items[j], base_y - 40); // 移出可视区
+                lv_obj_set_y(sec->sub_items[j], base_y);
+                lv_obj_set_height(sec->sub_items[j], 0);
                 lv_obj_add_flag(sec->sub_items[j], LV_OBJ_FLAG_HIDDEN);
             }
         }
-        /* 只显示第1项 */
+        /* 只显示第1项 → 恢复高度 */
         if (sec->sub_items[0]) {
             lv_obj_t *lbl = lv_obj_get_child(sec->sub_items[0], 0);
             if (lbl) lv_label_set_text(lbl, "Status:  Connected");
             lv_obj_clear_flag(sec->sub_items[0], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_height(sec->sub_items[0], SUB_H);
             lv_obj_set_y(sec->sub_items[0], base_y);
         }
+        /* 强制重算滚动范围 */
         lv_obj_invalidate(s_page);
+        lv_obj_scroll_to_y(s_page, 0, LV_ANIM_OFF);
         sec->sub_count = 1;
     } else {
         sec->sub_count = 3;
