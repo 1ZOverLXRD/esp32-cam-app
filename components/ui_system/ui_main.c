@@ -33,19 +33,6 @@ static bool s_exit_locked = false;
 bool s_wifi_connected = false;
 char s_sta_ip[16] = "0.0.0.0";
 
-/* WiFi UI 待更新标志 + LVGL 定时器 */
-volatile bool s_wifi_ui_pending = false;
-static lv_timer_t *s_wifi_timer = NULL;
-
-static void wifi_poll_cb(lv_timer_t *t)
-{
-    (void)t;
-    if (s_wifi_ui_pending) {
-        s_wifi_ui_pending = false;
-        update_wifi_info();
-    }
-}
-
 /* ===== 全局状态栈 =====
  * 每层存储实际状态值: MAINMENU=0, APP=1, SUB=2 ...
  * push(值)存入，pop弹出顶部，peek查看当前层
@@ -279,10 +266,6 @@ void ui_main_menu_init(void)
     lv_obj_set_style_text_color(launch, lv_color_make(180, 180, 180), LV_STATE_DEFAULT);
 
     ESP_LOGI(TAG, "Main menu created");
-
-    /* WiFi UI 轮询定时器（LVGL 任务上下文，安全） */
-    s_wifi_timer = lv_timer_create(wifi_poll_cb, 100, NULL);
-    lv_timer_set_repeat_count(s_wifi_timer, -1);
 }
 
 static int get_real_index(void)

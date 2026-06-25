@@ -16,7 +16,6 @@ static httpd_handle_t s_server = NULL;
 extern bool s_wifi_connected;
 extern char s_sta_ip[16];
 extern void update_wifi_info(void);
-extern volatile bool s_wifi_ui_pending;
 
 /* 延迟切换纯 STA — 不能在 HTTP handler 内调 httpd_stop */
 static void sta_switch_timer_cb(TimerHandle_t xTimer)
@@ -50,13 +49,12 @@ static esp_err_t handler_wifi_status(httpd_req_t *req)
     esp_wifi_get_mode(&mode);
 
     const char *mode_str = (mode == WIFI_MODE_STA) ? "STA" : "AP";
-    bool connected = s_wifi_connected;
 
     if (mode == WIFI_MODE_AP || mode == WIFI_MODE_APSTA) {
         snprintf(json, sizeof(json),
             "{\"mode\":\"%s\",\"ip\":\"%s\",\"ssid\":\"%s\",\"connected\":%s}",
             mode_str, WIFI_AP_IP, WIFI_AP_SSID,
-            connected ? "true" : "false");
+            s_wifi_connected ? "true" : "false");
     } else {
         snprintf(json, sizeof(json),
             "{\"mode\":\"%s\",\"ip\":\"%s\",\"ssid\":\"%s\",\"connected\":%s}",
@@ -140,10 +138,9 @@ static esp_err_t handler_wifi_test(httpd_req_t *req)
         char resp[128];
         snprintf(resp, sizeof(resp), "{\"ok\":true,\"ip\":\"%s\"}", ip_str);
 
-        /* 连接成功 → 立刻持LVGL锁刷新UI + 设标志位让定时器兜底 */
+        /* 连接成功 → 立刻持LVGL锁刷新UI */
         s_wifi_connected = true;
         s_sta_ip[0] = '\0';
-        s_wifi_ui_pending = true;
         ui_lvgl_lock();
         update_wifi_info();
         ui_lvgl_unlock();

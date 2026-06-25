@@ -54,8 +54,6 @@ static void wifi_ap_init(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "WiFi AP started: " WIFI_AP_SSID " / " WIFI_AP_PASS);
-    esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED,
-        &wifi_event_handler, NULL);
     esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
         &wifi_event_handler, NULL);
 }

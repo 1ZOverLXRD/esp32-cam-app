@@ -1,6 +1,5 @@
 #include "app_t.h"
 #include "ui_main.h"
-#include "wifi_config.h"
 #include "esp_log.h"
 #include <string.h>
 #include <stdio.h>
@@ -10,34 +9,30 @@ static const char *TAG = "APP_SETTINGS";
 /* 外部标志：通知ui_main.c不要触发退出 */
 extern volatile bool s_app_handled;
 static lv_obj_t *s_page = NULL;
-static lv_obj_t *s_dir_label = NULL;
-static int s_first_event = 1;  // 跳过刚打开时的首个误触事件
-static int s_skip_press = 0;   // 跳过LONG_PRESS塌缩后紧跟的PRESS
-static TickType_t s_last_longpress_tick = 0; // 上次LONG_PRESS的时间戳
+static int s_first_event = 1;
+static int s_skip_press = 0;
+
 /* 塌缩弧进度指示 */
-static lv_obj_t *s_col_overlay = NULL;   // 塌缩弧叠层
-static lv_obj_t *s_col_arc = NULL;       // 塌缩弧
-static bool s_col_animating = false;     // 塌缩弧是否动画中
+static lv_obj_t *s_col_overlay = NULL;
+static lv_obj_t *s_col_arc = NULL;
+static bool s_col_animating = false;
 
 #define SECTION_COUNT 6
+#define WIFI_SEC_IDX 1  // WiFi Info 段索引
 
-/* 每个折叠段的结构 */
 typedef struct {
-    lv_obj_t *header;       // 表头容器
-    lv_obj_t *hdr_label;    // 表头文字
-    lv_obj_t *indicator;    // [+] / [-] 指示器
-    lv_obj_t *cursor;       // '>' 游标
-    lv_obj_t *sub_items[6]; // 子项最多6个
-    int sub_count;          // 子项数量
-    int expanded;           // 是否展开
-    int prev_selected;      // 折叠时原选中偏移恢复
+    lv_obj_t *header;
+    lv_obj_t *hdr_label;
+    lv_obj_t *indicator;
+    lv_obj_t *cursor;
+    lv_obj_t *sub_items[6];
+    int sub_count;
+    int expanded;
 } section_t;
 
 static section_t s_sections[SECTION_COUNT];
-static int s_selected = 0;       // 全局选中索引（0~SECTION_COUNT-1 为表头）
-static lv_obj_t *s_hint = NULL;
-static bool s_show_sub = false;  // 当前是否聚焦在子项上
-static int s_sub_selected = 0;   // 子项选中索引
+static int s_selected = 0;
+static int s_sub_selected = 0;
 
 /* 表头名称 */
 static const char *HEADER_NAMES[SECTION_COUNT] = {
@@ -55,7 +50,6 @@ static const char *CAMERA_ITEMS[] = {"Resolution: 720p", "Frame Rate: 25fps", "F
 static const char *WIFI_ITEMS_DISCONNECTED[] = {"Status:  AP Mode / 192.168.4.1",
                                                  "SSID:    COLDFISHESP32",
                                                  "Password: 12060606"};
-static const char *WIFI_ITEMS_CONNECTED[] = {"Status:  Connected"};
 static const char *ANIM_ITEMS[] = {"Speed: 100ms"};
 static const char *JOY_ITEMS[] = {"Direction: Center"};
 static const char *SCREEN_ITEMS[] = {"Brightness: 80%"};
@@ -73,12 +67,6 @@ static const int SUB_COUNTS[SECTION_COUNT] = {
 #define SUB_H    32
 #define ITEM_GAP 2
 #define BASE_Y   48
-
-/* 淡出动画完成回调：隐藏对象 */
-static void fade_done_hide(lv_anim_t *anim)
-{
-    lv_obj_add_flag((lv_obj_t*)anim->var, LV_OBJ_FLAG_HIDDEN);
-}
 
 /* 更新折叠状态+动画 */
 static void update_expand(section_t *sec, int expand)
@@ -257,7 +245,7 @@ static void collapse_arc_ready(lv_anim_t *a)
 /* 更新 WiFi Info 段显示（连接状态变化时调用） */
 void update_wifi_info(void)
 {
-    section_t *sec = &s_sections[1];  // WiFi Info 固定 index=1
+    section_t *sec = &s_sections[WIFI_SEC_IDX];  // WiFi Info
     if (!sec->header) return;
 
     if (s_wifi_connected) {
@@ -347,29 +335,22 @@ static void start_collapse_arc(void)
     lv_anim_start(&arc_anim);
 }
 
-static void cancel_collapse_arc(void)
+static void cancel_collapse_arc(int for_destroy)
 {
     if (!s_col_animating) return;
     s_col_animating = false;
-    /* 摇杆上下文中删对象安全（s_page活着的），隐藏叠层 */
     if (s_col_overlay) {
         lv_anim_del(s_col_overlay, NULL);
-        lv_obj_add_flag(s_col_overlay, LV_OBJ_FLAG_HIDDEN);
+        if (!for_destroy) lv_obj_add_flag(s_col_overlay, LV_OBJ_FLAG_HIDDEN);
     }
     if (s_col_arc) lv_anim_del(s_col_arc, NULL);
     s_col_overlay = NULL;
     s_col_arc = NULL;
 }
 
-/* on_destroy专用：只停动画不删对象，由父页面删除统一清理 */
 static void cleanup_arc_for_destroy(void)
 {
-    if (!s_col_animating) return;
-    s_col_animating = false;
-    if (s_col_arc) lv_anim_del(s_col_arc, NULL);
-    if (s_col_overlay) lv_anim_del(s_col_overlay, NULL);
-    s_col_overlay = NULL;
-    s_col_arc = NULL;
+    cancel_collapse_arc(1);
 }
 
 static void on_create(lv_obj_t *parent)
@@ -377,7 +358,6 @@ static void on_create(lv_obj_t *parent)
     s_page = parent;
     s_first_event = 1;
     s_skip_press = 0;
-    s_last_longpress_tick = 0;
     s_col_animating = false;
     s_col_overlay = NULL;
     s_col_arc = NULL;
@@ -408,15 +388,10 @@ static void on_create(lv_obj_t *parent)
         const char **items = SUB_ITEMS[i];
         int count = SUB_COUNTS[i];
 
-        /* WiFi Info 段：动态根据连接状态选择显示内容 */
-        if (i == 1) {
-            if (s_wifi_connected) {
-                items = WIFI_ITEMS_CONNECTED;
-                count = 1;
-            } else {
-                items = WIFI_ITEMS_DISCONNECTED;
-                count = 3;
-            }
+        /* WiFi Info 段：断开状态固定3项，连接后由 update_wifi_info 处理 */
+        if (i == WIFI_SEC_IDX) {
+            items = WIFI_ITEMS_DISCONNECTED;
+            count = 3;
         }
 
         sec->sub_count = count;
@@ -451,48 +426,34 @@ static void on_joystick(joystick_evt_t evt)
     /* 塌缩弧动画中: 任何操作取消弧 */
     if (s_col_animating) {
         if (evt == JOY_EVT_LEFT || evt == JOY_EVT_RIGHT || evt == JOY_EVT_PRESS) {
-            cancel_collapse_arc();
+            cancel_collapse_arc(0);
             return;
         }
     }
 
     switch (evt) {
     case JOY_EVT_LEFT:
+    case JOY_EVT_RIGHT: {
         if (top == UI_STATE_SUB) {
             section_t *sec = &s_sections[s_selected];
             lv_obj_t *old = sec->sub_items[s_sub_selected];
             if (old) set_sub_style(old, 0);
-            s_sub_selected++;
+            s_sub_selected += (evt == JOY_EVT_LEFT) ? 1 : -1;
             if (s_sub_selected >= sec->sub_count) s_sub_selected = 0;
+            if (s_sub_selected < 0) s_sub_selected = sec->sub_count - 1;
             lv_obj_t *new = sec->sub_items[s_sub_selected];
             if (new) set_sub_style(new, 1);
             int sy = BASE_Y + s_selected * (HEADER_H + ITEM_GAP)
                      + s_sub_selected * (SUB_H + ITEM_GAP) - 40;
             if (s_page) lv_obj_scroll_to_y(s_page, sy > 0 ? sy : 0, LV_ANIM_ON);
         } else {
-            navigate(1);
+            navigate(evt == JOY_EVT_LEFT ? 1 : -1);
         }
         break;
-
-    case JOY_EVT_RIGHT:
-        if (top == UI_STATE_SUB) {
-            section_t *sec = &s_sections[s_selected];
-            lv_obj_t *old = sec->sub_items[s_sub_selected];
-            if (old) set_sub_style(old, 0);
-            s_sub_selected--;
-            if (s_sub_selected < 0) s_sub_selected = sec->sub_count - 1;
-            lv_obj_t *new = sec->sub_items[s_sub_selected];
-            if (new) set_sub_style(new, 1);
-            int sy2 = BASE_Y + s_selected * (HEADER_H + ITEM_GAP)
-                      + s_sub_selected * (SUB_H + ITEM_GAP) - 40;
-            if (s_page) lv_obj_scroll_to_y(s_page, sy2 > 0 ? sy2 : 0, LV_ANIM_ON);
-        } else {
-            navigate(-1);
-        }
-        break;
+    }
 
     case JOY_EVT_PRESS:
-        if (s_skip_press || (xTaskGetTickCount() - s_last_longpress_tick) < pdMS_TO_TICKS(50)) {
+        if (s_skip_press) {
             s_skip_press = 0;
             break;
         }
@@ -520,7 +481,6 @@ static void on_joystick(joystick_evt_t evt)
         if (top == UI_STATE_SUB) {
             /* 子项级: 启动塌缩弧，消费事件阻止退出APP */
             s_app_handled = true;
-            s_last_longpress_tick = xTaskGetTickCount();
             start_collapse_arc();
         }
         /* APP级(depth=1): 不消费事件 → ui_main触发退出APP */
