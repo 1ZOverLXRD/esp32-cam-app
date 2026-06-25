@@ -34,10 +34,6 @@ static void sta_switch_timer_cb(TimerHandle_t xTimer)
 
     s_wifi_connected = true;
     s_sta_ip[0] = '\0';
-    /* 持LVGL锁更新UI（从定时器任务调，必须锁） */
-    ui_lvgl_lock();
-    update_wifi_info();
-    ui_lvgl_unlock();
 
     ESP_LOGI(TAG, "STA mode active, waiting for IP...");
 }
@@ -145,6 +141,14 @@ static esp_err_t handler_wifi_test(httpd_req_t *req)
 
         char resp[128];
         snprintf(resp, sizeof(resp), "{\"ok\":true,\"ip\":\"%s\"}", ip_str);
+
+        /* 连接成功 → 立刻持LVGL锁刷新UI */
+        s_wifi_connected = true;
+        s_sta_ip[0] = '\0';
+        ui_lvgl_lock();
+        update_wifi_info();
+        ui_lvgl_unlock();
+
         httpd_resp_set_type(req, "application/json");
         httpd_resp_send(req, resp, -1);   // 先发响应
 
