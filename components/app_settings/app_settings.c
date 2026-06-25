@@ -267,13 +267,13 @@ void update_wifi_info(void)
             int hy = lv_obj_get_y(sec->header);
             lv_obj_set_y(sec->sub_items[0], hy + HEADER_H + ITEM_GAP);
         }
-        /* 清空 SSID + PSWD 文字 */
-        char *empty = "";
+        /* 清空 SSID + PSWD 文字 + 缩至0高度 */
         for (int j = 1; j < 3 && j < sec->sub_count; j++) {
             if (sec->sub_items[j]) {
                 lv_obj_add_flag(sec->sub_items[j], LV_OBJ_FLAG_HIDDEN);
+                lv_obj_set_height(sec->sub_items[j], 0);
                 lv_obj_t *lbl = lv_obj_get_child(sec->sub_items[j], 0);
-                if (lbl) lv_label_set_text(lbl, empty);
+                if (lbl) lv_label_set_text(lbl, "");
             }
         }
         sec->sub_count = 1;

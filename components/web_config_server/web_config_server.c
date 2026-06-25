@@ -29,13 +29,11 @@ static void sta_switch_timer_cb(TimerHandle_t xTimer)
         s_server = NULL;
     }
 
+    /* 测试已连上，只需切模式、不需要重新 connect */
     esp_wifi_set_mode(WIFI_MODE_STA);
-    esp_wifi_connect();
 
     s_wifi_connected = true;
     s_sta_ip[0] = '\0';
-
-    ESP_LOGI(TAG, "STA mode active, waiting for IP...");
 }
 
 static esp_err_t handler_index(httpd_req_t *req)
@@ -117,8 +115,8 @@ static esp_err_t handler_wifi_test(httpd_req_t *req)
     esp_wifi_set_config(WIFI_IF_STA, &sta_cfg);
     esp_wifi_connect();
 
-    /* 等待连接结果（最多10秒） */
-    int wait_count = 100;
+    /* 等待连接结果（最多5秒） */
+    int wait_count = 50;
     bool success = false;
     while (wait_count-- > 0) {
         wifi_ap_record_t ap;
