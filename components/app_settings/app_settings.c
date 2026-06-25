@@ -261,17 +261,21 @@ void update_wifi_info(void)
     if (!sec->header) return;
 
     if (s_wifi_connected) {
-        /* 连接后：仅显示 Status，隐藏 SSID/PSWD，sub_count=1 导航跳过 */
         if (sec->sub_items[0]) {
-            lv_obj_clear_flag(sec->sub_items[0], LV_OBJ_FLAG_HIDDEN);
             lv_obj_t *lbl = lv_obj_get_child(sec->sub_items[0], 0);
             if (lbl) lv_label_set_text(lbl, "Status:  Connected");
             int hy = lv_obj_get_y(sec->header);
             lv_obj_set_y(sec->sub_items[0], hy + HEADER_H + ITEM_GAP);
         }
-        for (int j = 1; j < sec->sub_count; j++)
-            if (sec->sub_items[j])
+        /* 清空 SSID + PSWD 文字 */
+        char *empty = "";
+        for (int j = 1; j < 3 && j < sec->sub_count; j++) {
+            if (sec->sub_items[j]) {
                 lv_obj_add_flag(sec->sub_items[j], LV_OBJ_FLAG_HIDDEN);
+                lv_obj_t *lbl = lv_obj_get_child(sec->sub_items[j], 0);
+                if (lbl) lv_label_set_text(lbl, empty);
+            }
+        }
         sec->sub_count = 1;
     } else {
         sec->sub_count = 3;
