@@ -17,8 +17,8 @@ static lv_obj_t *s_col_overlay = NULL;
 static lv_obj_t *s_col_arc = NULL;
 static bool s_col_animating = false;
 
-#define SECTION_COUNT 6
-#define WIFI_SEC_IDX 1  // WiFi Info 段索引
+#define SECTION_COUNT 3
+#define WIFI_SEC_IDX 1  // WiFi Info 段索引（Camera=0, WiFi=1, Joystick=2）
 
 typedef struct {
     lv_obj_t *header;
@@ -38,10 +38,7 @@ static int s_sub_selected = 0;
 static const char *HEADER_NAMES[SECTION_COUNT] = {
     "Camera Config",
     "WiFi Info",
-    "Animation Speed",
     "Joystick Report",
-    "Screen Setting",
-    "Reset Defaults",
 };
 
 /* 各段子项 */
@@ -50,17 +47,14 @@ static const char *CAMERA_ITEMS[] = {"Resolution: 720p", "Frame Rate: 25fps", "F
 static const char *WIFI_ITEMS_DISCONNECTED[] = {"Status:  AP Mode / 192.168.4.1",
                                                  "SSID:    COLDFISHESP32",
                                                  "Password: 12060606"};
-static const char *ANIM_ITEMS[] = {"Speed: 100ms"};
-static const char *JOY_ITEMS[] = {"Direction: Center"};
-static const char *SCREEN_ITEMS[] = {"Brightness: 80%"};
-static const char *RESET_ITEMS[] = {"[ Press to reset ]"};
+static const char *JOY_ITEMS[] = {"X:0.00  Y:0.00  SW:1"};
 
 static const char **SUB_ITEMS[SECTION_COUNT] = {
-    CAMERA_ITEMS, WIFI_ITEMS_DISCONNECTED, ANIM_ITEMS, JOY_ITEMS, SCREEN_ITEMS, RESET_ITEMS
+    CAMERA_ITEMS, WIFI_ITEMS_DISCONNECTED, JOY_ITEMS,
 };
 
 static const int SUB_COUNTS[SECTION_COUNT] = {
-    3, 3, 1, 1, 1, 1
+    3, 3, 1,
 };
 
 #define HEADER_H 36
@@ -428,6 +422,19 @@ static void on_joystick(joystick_evt_t evt)
         if (evt == JOY_EVT_LEFT || evt == JOY_EVT_RIGHT || evt == JOY_EVT_PRESS) {
             cancel_collapse_arc(0);
             return;
+        }
+    }
+
+    /* Joystick Report 段展开时：每次事件更新实时值 */
+    if (s_selected == 2 && s_sections[2].expanded) {
+        char buf[40];
+        float x = joystick_read_x();
+        float y = joystick_read_y();
+        int sw = joystick_read_sw();
+        snprintf(buf, sizeof(buf), "X:%.2f  Y:%.2f  SW:%d", x, y, sw);
+        if (s_sections[2].sub_items[0]) {
+            lv_obj_t *lbl = lv_obj_get_child(s_sections[2].sub_items[0], 0);
+            if (lbl) lv_label_set_text(lbl, buf);
         }
     }
 
