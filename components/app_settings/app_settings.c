@@ -25,7 +25,8 @@ static bool s_col_animating = false;     // 塌缩弧是否动画中
 typedef struct {
     lv_obj_t *header;       // 表头容器
     lv_obj_t *hdr_label;    // 表头文字
-    lv_obj_t *indicator;    // ▶/▼ 指示器
+    lv_obj_t *indicator;    // [+] / [-] 指示器
+    lv_obj_t *cursor;       // '>' 游标
     lv_obj_t *sub_items[6]; // 子项最多6个
     int sub_count;          // 子项数量
     int expanded;           // 是否展开
@@ -120,16 +121,20 @@ static void update_expand(section_t *sec, int expand)
 /* 选中样式 — '>' 游标标记选中 */
 static void set_header_style(lv_obj_t *obj, int selected)
 {
-    // 找对应段，获取 indicator
     section_t *sec = NULL;
     for (int i = 0; i < SECTION_COUNT; i++)
         if (s_sections[i].header == obj) { sec = &s_sections[i]; break; }
-    if (!sec || !sec->indicator) return;
+    if (!sec) return;
 
-    const char *expand = sec->expanded ? "-" : "+";
-    char buf[8];
-    snprintf(buf, sizeof(buf), selected ? "> [%s]" : "  [%s]", expand);
-    lv_label_set_text(sec->indicator, buf);
+    /* 延迟创建 '>' 游标 */
+    if (selected && !sec->cursor) {
+        sec->cursor = lv_label_create(sec->header);
+        lv_label_set_text(sec->cursor, ">");
+        lv_obj_set_style_text_color(sec->cursor, lv_color_make(140, 140, 255), LV_STATE_DEFAULT);
+        lv_obj_align(sec->cursor, LV_ALIGN_LEFT_MID, 4, 0);
+    }
+    if (sec->cursor)
+        lv_obj_set_style_opa(sec->cursor, selected ? LV_OPA_COVER : LV_OPA_0, LV_STATE_DEFAULT);
 }
 
 static void set_sub_style(lv_obj_t *obj, int selected)
@@ -200,6 +205,7 @@ static lv_obj_t *create_header(lv_obj_t *parent, const char *text, int idx)
     s_sections[idx].header = hdr;
     s_sections[idx].hdr_label = lbl;
     s_sections[idx].indicator = ind;
+    s_sections[idx].cursor = NULL;
     s_sections[idx].sub_count = SUB_COUNTS[idx];
     s_sections[idx].expanded = 0;
 
