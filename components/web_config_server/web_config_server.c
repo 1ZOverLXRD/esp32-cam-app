@@ -5,7 +5,6 @@
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "esp_netif.h"
-#include "lvgl.h"
 #include "cJSON.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
@@ -15,10 +14,7 @@ static const char *TAG = "WEB_CFG";
 static httpd_handle_t s_server = NULL;
 extern bool s_wifi_connected;
 extern char s_sta_ip[16];
-extern void update_wifi_info(void);
-
-/* lv_async_call 包装 — 在LVGL任务上下文安全更新UI */
-static void async_update_wifi(void *arg) { (void)arg; update_wifi_info(); }
+extern volatile bool s_wifi_ui_pending;
 
 /* 延迟切换纯 STA — 不能在 HTTP handler 内调 httpd_stop */
 static void sta_switch_timer_cb(TimerHandle_t xTimer)
@@ -36,8 +32,7 @@ static void sta_switch_timer_cb(TimerHandle_t xTimer)
 
     s_wifi_connected = true;
     s_sta_ip[0] = '\0';
-    /* 异步更新UI（非LVGL任务不可直接调LVGL） */
-    lv_async_call(&async_update_wifi, NULL);
+    s_wifi_ui_pending = true;
 
     ESP_LOGI(TAG, "STA mode active, waiting for IP...");
 }

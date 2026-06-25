@@ -124,12 +124,6 @@ void app_main(void)
     }
 }
 
-static void async_update_wifi(void *arg) {
-    (void)arg;
-    extern void update_wifi_info(void);
-    update_wifi_info();
-}
-
 static void wifi_event_handler(void *arg, esp_event_base_t base,
                                 int32_t id, void *data)
 {
@@ -137,12 +131,12 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
         ip_event_got_ip_t *evt = (ip_event_got_ip_t *)data;
         snprintf(s_sta_ip, sizeof(s_sta_ip), IPSTR, IP2STR(&evt->ip_info.ip));
         ESP_LOGI(TAG, "STA got IP: %s", s_sta_ip);
-        lv_async_call(&async_update_wifi, NULL);
+        s_wifi_ui_pending = true;
     }
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         ESP_LOGI(TAG, "STA disconnected");
         s_wifi_connected = false;
-        lv_async_call(&async_update_wifi, NULL);
+        s_wifi_ui_pending = true;
     }
 }
 
@@ -152,6 +146,11 @@ static void joy_event_task(void *arg)
     while (1) {
         if (xQueueReceive(joystick_evt_queue, &evt, portMAX_DELAY) == pdTRUE) {
             ui_lvgl_lock();
+            /* 处理WiFi UI待更新（已在LVGL锁内） */
+            if (s_wifi_ui_pending) {
+                s_wifi_ui_pending = false;
+                update_wifi_info();
+            }
             ui_main_handle_joystick(evt);
             ui_lvgl_unlock();
         }
