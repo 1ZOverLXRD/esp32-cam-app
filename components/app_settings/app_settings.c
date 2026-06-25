@@ -175,7 +175,7 @@ static lv_obj_t *create_sub_item(lv_obj_t *parent, const char *text, int y_pos)
     lv_obj_set_style_text_font(label, lv_font_default(), LV_STATE_DEFAULT);
     lv_obj_set_width(label, 200);
     lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
-    lv_obj_align(label, LV_ALIGN_LEFT_MID, 4, 0);
+    lv_obj_align(label, LV_ALIGN_LEFT_MID, 14, 0);
 
     lv_obj_set_style_opa(item, LV_OPA_COVER, LV_STATE_DEFAULT);
     lv_obj_add_flag(item, LV_OBJ_FLAG_HIDDEN);                 // 初始隐藏
@@ -195,12 +195,12 @@ static lv_obj_t *create_header(lv_obj_t *parent, const char *text, int idx)
     lv_obj_t *ind = lv_label_create(hdr);
     lv_label_set_text(ind, "[+]");
     lv_obj_set_style_text_color(ind, lv_color_make(150, 150, 200), LV_STATE_DEFAULT);
-    lv_obj_align(ind, LV_ALIGN_LEFT_MID, 8, 0);
+    lv_obj_align(ind, LV_ALIGN_LEFT_MID, 18, 0);
 
     lv_obj_t *lbl = lv_label_create(hdr);
     lv_label_set_text(lbl, text);
     lv_obj_set_style_text_color(lbl, lv_color_white(), LV_STATE_DEFAULT);
-    lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 30, 0);
+    lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 44, 0);
 
     s_sections[idx].header = hdr;
     s_sections[idx].hdr_label = lbl;
@@ -261,7 +261,7 @@ void update_wifi_info(void)
     if (!sec->header) return;
 
     if (s_wifi_connected) {
-        /* 2项: Status + IP */
+        /* 连接后：仅显示 Status，隐藏 SSID/PSWD，sub_count=1 导航跳过 */
         if (sec->sub_items[0]) {
             lv_obj_clear_flag(sec->sub_items[0], LV_OBJ_FLAG_HIDDEN);
             lv_obj_t *lbl = lv_obj_get_child(sec->sub_items[0], 0);
@@ -269,26 +269,10 @@ void update_wifi_info(void)
             int hy = lv_obj_get_y(sec->header);
             lv_obj_set_y(sec->sub_items[0], hy + HEADER_H + ITEM_GAP);
         }
-        /* IP 行（替换原 SSID 位置） */
-        if (sec->sub_count >= 2 && sec->sub_items[1]) {
-            lv_obj_clear_flag(sec->sub_items[1], LV_OBJ_FLAG_HIDDEN);
-            lv_obj_t *lbl = lv_obj_get_child(sec->sub_items[1], 0);
-            if (lbl) {
-                char ip_buf[32];
-                if (s_sta_ip[0] == '\0' || strcmp(s_sta_ip, "0.0.0.0") == 0)
-                    snprintf(ip_buf, sizeof(ip_buf), "IP:      waiting...");
-                else
-                    snprintf(ip_buf, sizeof(ip_buf), "IP:      %s", s_sta_ip);
-                lv_label_set_text(lbl, ip_buf);
-            }
-            int hy = lv_obj_get_y(sec->header);
-            lv_obj_set_y(sec->sub_items[1], hy + HEADER_H + ITEM_GAP + SUB_H + ITEM_GAP);
-        }
-        /* 隐藏第3项（原 Password） */
-        for (int j = 2; j < sec->sub_count; j++)
+        for (int j = 1; j < sec->sub_count; j++)
             if (sec->sub_items[j])
                 lv_obj_add_flag(sec->sub_items[j], LV_OBJ_FLAG_HIDDEN);
-        sec->sub_count = 2;  // 导航只走2项
+        sec->sub_count = 1;
     } else {
         sec->sub_count = 3;
         for (int j = 0; j < 3 && j < 6; j++)
