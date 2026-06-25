@@ -431,7 +431,7 @@ static void on_joystick(joystick_evt_t evt)
         float x = joystick_read_y();
         float y = joystick_read_x();
         int sw = joystick_read_sw();
-        snprintf(buf, sizeof(buf), "X:%.2f  Y:%.2f  SW:%d", x, y, sw ? 0 : 1);
+        snprintf(buf, sizeof(buf), "X:%.2f  Y:%.2f  SW:%d", x, y, sw);
         if (s_sections[2].sub_items[0]) {
             lv_obj_t *lbl = lv_obj_get_child(s_sections[2].sub_items[0], 0);
             if (lbl) lv_label_set_text(lbl, buf);
