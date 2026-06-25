@@ -1,6 +1,7 @@
 #include "web_config_server.h"
 #include "web_config.h"
 #include "wifi_config.h"
+#include "ui_lvgl.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
@@ -14,6 +15,7 @@ static const char *TAG = "WEB_CFG";
 static httpd_handle_t s_server = NULL;
 extern bool s_wifi_connected;
 extern char s_sta_ip[16];
+extern void update_wifi_info(void);
 extern volatile bool s_wifi_ui_pending;
 
 /* 延迟切换纯 STA — 不能在 HTTP handler 内调 httpd_stop */
@@ -32,7 +34,10 @@ static void sta_switch_timer_cb(TimerHandle_t xTimer)
 
     s_wifi_connected = true;
     s_sta_ip[0] = '\0';
-    s_wifi_ui_pending = true;
+    /* 持LVGL锁更新UI（从定时器任务调，必须锁） */
+    ui_lvgl_lock();
+    update_wifi_info();
+    ui_lvgl_unlock();
 
     ESP_LOGI(TAG, "STA mode active, waiting for IP...");
 }
