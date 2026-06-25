@@ -4,9 +4,23 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 
 static const char *TAG = "LVGL";
 static lv_disp_t *s_disp = NULL;
+static SemaphoreHandle_t s_lvgl_mutex = NULL;  // 双核竞态防护
+
+void ui_lvgl_lock(void)
+{
+    if (s_lvgl_mutex)
+        xSemaphoreTake(s_lvgl_mutex, portMAX_DELAY);
+}
+
+void ui_lvgl_unlock(void)
+{
+    if (s_lvgl_mutex)
+        xSemaphoreGive(s_lvgl_mutex);
+}
 
 /* 缓冲行数：双缓冲 20 行刚好占满 DMA 池 */
 static lv_color_t *s_buf1 = NULL;
@@ -32,13 +46,18 @@ static void lvgl_task(void *arg)
 {
     ESP_LOGI(TAG, "LVGL task started on core %d", xPortGetCoreID());
     while (1) {
+        ui_lvgl_lock();
         lv_task_handler();
-        vTaskDelay(pdMS_TO_TICKS(5));  // 给IDLE任务留时间，防wdt
+        ui_lvgl_unlock();
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
 
 esp_err_t ui_lvgl_init(void)
 {
+    s_lvgl_mutex = xSemaphoreCreateMutex();
+    assert(s_lvgl_mutex);
+
     lv_init();
 
     size_t buf_size = LCD_WIDTH * LCD_HEIGHT * sizeof(lv_color_t);  // 全屏缓冲

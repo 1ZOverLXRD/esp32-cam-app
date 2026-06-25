@@ -10,6 +10,7 @@
 #include "ui_main.h"
 #include "comms_server.h"
 #include "web_config_server.h"
+#include "wifi_config.h"
 // Network init
 #include "nvs_flash.h"
 #include "esp_netif.h"
@@ -18,6 +19,8 @@
 
 static const char *TAG = "MAIN";
 static void joy_event_task(void *arg);
+static void wifi_event_handler(void *arg, esp_event_base_t base,
+                                int32_t id, void *data);
 
 static void wifi_ap_init(void)
 {
@@ -49,6 +52,14 @@ static void wifi_ap_init(void)
     };
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
     ESP_ERROR_CHECK(esp_wifi_start());
+
+    /* 注册 STA 连接事件回调 */
+    esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED,
+        &wifi_event_handler, NULL);
+    esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
+        &wifi_event_handler, NULL);
+    esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED,
+        &wifi_event_handler, NULL);
 
     ESP_LOGI(TAG, "WiFi AP started: ESP32-CAM / 12345678");
 }
@@ -90,7 +101,7 @@ void app_main(void)
     ESP_LOGI(TAG, "UI menu OK");
 
     // ---- 摇杆事件任务（提前启动，不等WiFi） ----
-    xTaskCreatePinnedToCore(joy_event_task, "joy_evt", 2048, NULL, 4, NULL, 1);
+    xTaskCreatePinnedToCore(joy_event_task, "joy_evt", 4096, NULL, 4, NULL, 1);
 
     // ---- WiFi AP ----
     wifi_ap_init();
@@ -107,11 +118,27 @@ void app_main(void)
     ESP_LOGI(TAG, "All init OK!");
 
     // ---- Event task ----
-    xTaskCreatePinnedToCore(joy_event_task, "joy_evt", 2048, NULL, 4, NULL, 1);
+    xTaskCreatePinnedToCore(joy_event_task, "joy_evt", 4096, NULL, 4, NULL, 1);
 
     while (1) {
         ESP_LOGI(TAG, "Main alive");
         vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+}
+
+static void wifi_event_handler(void *arg, esp_event_base_t base,
+                                int32_t id, void *data)
+{
+    if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t *evt = (ip_event_got_ip_t *)data;
+        snprintf(s_sta_ip, sizeof(s_sta_ip), IPSTR, IP2STR(&evt->ip_info.ip));
+        ESP_LOGI(TAG, "STA got IP: %s", s_sta_ip);
+        /* s_wifi_connected 由 sta_switch_timer_cb 设置 */
+    }
+    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        ESP_LOGI(TAG, "STA disconnected");
+        /* 不做自动回退，标记断开 */
+        s_wifi_connected = false;
     }
 }
 
@@ -120,7 +147,9 @@ static void joy_event_task(void *arg)
     joystick_evt_t evt;
     while (1) {
         if (xQueueReceive(joystick_evt_queue, &evt, portMAX_DELAY) == pdTRUE) {
+            ui_lvgl_lock();
             ui_main_handle_joystick(evt);
+            ui_lvgl_unlock();
         }
     }
 }

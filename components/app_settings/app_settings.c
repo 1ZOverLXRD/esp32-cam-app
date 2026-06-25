@@ -1,12 +1,22 @@
 #include "app_t.h"
+#include "ui_main.h"
 #include "esp_log.h"
 #include <string.h>
 #include <stdio.h>
 
 static const char *TAG = "APP_SETTINGS";
+
+/* 外部标志：通知ui_main.c不要触发退出 */
+extern volatile bool s_app_handled;
 static lv_obj_t *s_page = NULL;
 static lv_obj_t *s_dir_label = NULL;
-static int s_first_event = 1;  // 跳过刚打开时的首个误触事件  // Joystick 实时方向显示
+static int s_first_event = 1;  // 跳过刚打开时的首个误触事件
+static int s_skip_press = 0;   // 跳过LONG_PRESS塌缩后紧跟的PRESS
+static TickType_t s_last_longpress_tick = 0; // 上次LONG_PRESS的时间戳
+/* 塌缩弧进度指示 */
+static lv_obj_t *s_col_overlay = NULL;   // 塌缩弧叠层
+static lv_obj_t *s_col_arc = NULL;       // 塌缩弧
+static bool s_col_animating = false;     // 塌缩弧是否动画中
 
 #define SECTION_COUNT 6
 
@@ -82,18 +92,20 @@ static void update_expand(section_t *sec, int expand)
         }
     }
 
-    /* 重排所有段位置（展开项后面多留子项空间） */
+    /* 重排所有段位置（展开项后面多留子项空间），跳过Y没变项减少SPI刷新 */
     int y = BASE_Y;
     for (int i = 0; i < SECTION_COUNT; i++) {
         section_t *s = &s_sections[i];
         if (!s->header) continue;
-        lv_obj_set_y(s->header, y);
+        if ((int)lv_obj_get_y(s->header) != y)
+            lv_obj_set_y(s->header, y);
         y += HEADER_H + ITEM_GAP;
 
         if (s->expanded) {
             for (int j = 0; j < s->sub_count; j++) {
                 if (!s->sub_items[j]) continue;
-                lv_obj_set_y(s->sub_items[j], y);
+                if ((int)lv_obj_get_y(s->sub_items[j]) != y)
+                    lv_obj_set_y(s->sub_items[j], y);
                 y += SUB_H + ITEM_GAP;
             }
         }
@@ -183,12 +195,120 @@ static void navigate(int dir)
 
     set_header_style(s_sections[prev].header, 0);
     set_header_style(s_sections[s_selected].header, 1);
+    /* 滚动到选中表头可见 */
+    lv_obj_scroll_to_y(s_page, s_selected * (HEADER_H + ITEM_GAP) - 20, LV_ANIM_ON);
+}
+
+/* ===== 塌缩弧进度指示 ===== */
+static void set_opa(lv_obj_t *obj, int16_t v)
+{
+    lv_obj_set_style_opa(obj, v, LV_STATE_DEFAULT);
+}
+
+static void collapse_arc_ready(lv_anim_t *a)
+{
+    (void)a;
+    s_col_animating = false;
+    /* 弧完成时，如果on_destroy已经跑过了（s_page=NULL），什么都不做 */
+    if (!s_page) return;
+    ui_pop_state();  // STATE_SUB → STATE_ROOT
+    /* 执行塌缩 */
+    section_t *sec = &s_sections[s_selected];
+    update_expand(sec, 0);
+    s_sub_selected = 0;
+    s_skip_press = 1;
+    if (s_col_overlay) {
+        lv_obj_del(s_col_overlay);
+        s_col_overlay = NULL;
+        s_col_arc = NULL;
+    }
+}
+
+static void start_collapse_arc(void)
+{
+    if (s_col_animating) return;
+    s_col_animating = true;
+
+    section_t *sec = &s_sections[s_selected];
+    int hy = lv_obj_get_y(sec->header);
+    int hw = lv_obj_get_width(sec->header);
+
+    s_col_overlay = lv_obj_create(s_page);
+    lv_obj_set_size(s_col_overlay, hw, HEADER_H);
+    lv_obj_set_pos(s_col_overlay, 5, hy);
+    lv_obj_set_style_bg_color(s_col_overlay, lv_color_make(0, 0, 0), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(s_col_overlay, LV_OPA_40, LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(s_col_overlay, 6, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(s_col_overlay, 0, LV_STATE_DEFAULT);
+    lv_obj_clear_flag(s_col_overlay, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_set_style_opa(s_col_overlay, LV_OPA_0, LV_STATE_DEFAULT);
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, s_col_overlay);
+    lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)set_opa);
+    lv_anim_set_values(&a, LV_OPA_0, LV_OPA_COVER);
+    lv_anim_set_time(&a, 80);
+    lv_anim_start(&a);
+
+    s_col_arc = lv_arc_create(s_col_overlay);
+    lv_obj_set_size(s_col_arc, 28, 28);
+    lv_obj_align(s_col_arc, LV_ALIGN_RIGHT_MID, -8, 0);
+    lv_arc_set_bg_angles(s_col_arc, 0, 360);
+    lv_arc_set_rotation(s_col_arc, 270);
+    lv_arc_set_range(s_col_arc, 0, 100);
+    lv_arc_set_value(s_col_arc, 0);
+    lv_obj_set_style_arc_color(s_col_arc, lv_color_make(140, 140, 255), LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(s_col_arc, 4, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(s_col_arc, 4, LV_PART_INDICATOR);
+    lv_obj_clear_flag(s_col_arc, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_anim_t arc_anim;
+    lv_anim_init(&arc_anim);
+    lv_anim_set_var(&arc_anim, s_col_arc);
+    lv_anim_set_exec_cb(&arc_anim, (lv_anim_exec_xcb_t)lv_arc_set_value);
+    lv_anim_set_values(&arc_anim, 0, 100);
+    lv_anim_set_time(&arc_anim, 400);
+    lv_anim_set_ready_cb(&arc_anim, collapse_arc_ready);
+    lv_anim_start(&arc_anim);
+}
+
+static void cancel_collapse_arc(void)
+{
+    if (!s_col_animating) return;
+    s_col_animating = false;
+    /* 摇杆上下文中删对象安全（s_page活着的），隐藏叠层 */
+    if (s_col_overlay) {
+        lv_anim_del(s_col_overlay, NULL);
+        lv_obj_add_flag(s_col_overlay, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_col_arc) lv_anim_del(s_col_arc, NULL);
+    s_col_overlay = NULL;
+    s_col_arc = NULL;
+}
+
+/* on_destroy专用：只停动画不删对象，由父页面删除统一清理 */
+static void cleanup_arc_for_destroy(void)
+{
+    if (!s_col_animating) return;
+    s_col_animating = false;
+    if (s_col_arc) lv_anim_del(s_col_arc, NULL);
+    if (s_col_overlay) lv_anim_del(s_col_overlay, NULL);
+    s_col_overlay = NULL;
+    s_col_arc = NULL;
 }
 
 static void on_create(lv_obj_t *parent)
 {
     s_page = parent;
     s_first_event = 1;
+    s_skip_press = 0;
+    s_last_longpress_tick = 0;
+    s_col_animating = false;
+    s_col_overlay = NULL;
+    s_col_arc = NULL;
+    /* 全局栈: depth已=APP, 再push → SUB */
+    ui_push_sub();
     lv_obj_set_style_bg_color(s_page, lv_color_make(25, 25, 45), LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(s_page, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_radius(s_page, 0, LV_STATE_DEFAULT);
@@ -226,6 +346,7 @@ static void on_create(lv_obj_t *parent)
 
 static void on_destroy(void)
 {
+    cleanup_arc_for_destroy();
     memset(s_sections, 0, sizeof(s_sections));
     s_selected = 0;
     s_page = NULL;
@@ -233,60 +354,86 @@ static void on_destroy(void)
 
 static void on_joystick(joystick_evt_t evt)
 {
-    /* 跳过刚打开时的首个事件（防误触展开） */
-    if (s_first_event) {
-        s_first_event = 0;
-        return;
+    if (s_first_event) { s_first_event = 0; return; }
+
+    int depth = ui_get_depth();  // 1=APP级, 2+=SUB级
+    int top = ui_peek_state();   // UI_STATE_APP / UI_STATE_SUB
+
+    /* 塌缩弧动画中: 任何操作取消弧 */
+    if (s_col_animating) {
+        if (evt == JOY_EVT_LEFT || evt == JOY_EVT_RIGHT || evt == JOY_EVT_PRESS) {
+            cancel_collapse_arc();
+            return;
+        }
     }
 
     switch (evt) {
-        case JOY_EVT_LEFT: {
+    case JOY_EVT_LEFT:
+        if (top == UI_STATE_SUB) {
             section_t *sec = &s_sections[s_selected];
-            if (sec->expanded) {
-                /* 子项内循环 */
-                set_sub_style(sec->sub_items[s_sub_selected], 0);
-                s_sub_selected++;
-                if (s_sub_selected >= sec->sub_count) s_sub_selected = 0;
-                set_sub_style(sec->sub_items[s_sub_selected], 1);
-            } else {
-                navigate(1);
-            }
+            lv_obj_t *old = sec->sub_items[s_sub_selected];
+            if (old) set_sub_style(old, 0);
+            s_sub_selected++;
+            if (s_sub_selected >= sec->sub_count) s_sub_selected = 0;
+            lv_obj_t *new = sec->sub_items[s_sub_selected];
+            if (new) set_sub_style(new, 1);
+            int sy = BASE_Y + s_selected * (HEADER_H + ITEM_GAP)
+                     + s_sub_selected * (SUB_H + ITEM_GAP) - 40;
+            if (s_page) lv_obj_scroll_to_y(s_page, sy > 0 ? sy : 0, LV_ANIM_ON);
+        } else {
+            navigate(1);
+        }
+        break;
+
+    case JOY_EVT_RIGHT:
+        if (top == UI_STATE_SUB) {
+            section_t *sec = &s_sections[s_selected];
+            lv_obj_t *old = sec->sub_items[s_sub_selected];
+            if (old) set_sub_style(old, 0);
+            s_sub_selected--;
+            if (s_sub_selected < 0) s_sub_selected = sec->sub_count - 1;
+            lv_obj_t *new = sec->sub_items[s_sub_selected];
+            if (new) set_sub_style(new, 1);
+            int sy2 = BASE_Y + s_selected * (HEADER_H + ITEM_GAP)
+                      + s_sub_selected * (SUB_H + ITEM_GAP) - 40;
+            if (s_page) lv_obj_scroll_to_y(s_page, sy2 > 0 ? sy2 : 0, LV_ANIM_ON);
+        } else {
+            navigate(-1);
+        }
+        break;
+
+    case JOY_EVT_PRESS:
+        if (s_skip_press || (xTaskGetTickCount() - s_last_longpress_tick) < pdMS_TO_TICKS(50)) {
+            s_skip_press = 0;
             break;
         }
-        case JOY_EVT_RIGHT: {
-            section_t *sec = &s_sections[s_selected];
-            if (sec->expanded) {
-                set_sub_style(sec->sub_items[s_sub_selected], 0);
-                s_sub_selected--;
-                if (s_sub_selected < 0) s_sub_selected = sec->sub_count - 1;
-                set_sub_style(sec->sub_items[s_sub_selected], 1);
-            } else {
-                navigate(-1);
-            }
+        if (top == UI_STATE_SUB) {
+            /* 子项级: PRESS不做任何事（只能LONG_PRESS返回） */
             break;
         }
-        case JOY_EVT_PRESS: {
+        /* APP级: PRESS展开段并压入子项状态 */
+        {
             section_t *sec = &s_sections[s_selected];
-            if (sec->expanded) {
-                /* 子项已展开，PRESS 收起 */
-                update_expand(sec, 0);
-                s_sub_selected = 0;
-            } else {
-                /* 先展开 */
-                update_expand(sec, 1);
-                /* 收起其他段 */
-                for (int i = 0; i < SECTION_COUNT; i++) {
-                    if (i != s_selected && s_sections[i].expanded) {
-                        s_sections[i].expanded = 0;
-                        update_expand(&s_sections[i], 0);
-                    }
-                }
-            }
-            ESP_LOGI(TAG, "Selected: %s", HEADER_NAMES[s_selected]);
-            break;
+            update_expand(sec, 1);
+            for (int i = 0; i < SECTION_COUNT; i++)
+                if (i != s_selected && s_sections[i].expanded)
+                    { s_sections[i].expanded = 0; update_expand(&s_sections[i], 0); }
+            ui_push_sub();
         }
-        default:
-            break;
+        ESP_LOGI(TAG, "Selected: %s", HEADER_NAMES[s_selected]);
+        break;
+
+    case JOY_EVT_LONG_PRESS:
+        if (top == UI_STATE_SUB) {
+            /* 子项级: 启动塌缩弧，消费事件阻止退出APP */
+            s_app_handled = true;
+            s_last_longpress_tick = xTaskGetTickCount();
+            start_collapse_arc();
+        }
+        /* APP级(depth=1): 不消费事件 → ui_main触发退出APP */
+        break;
+
+    default: break;
     }
 }
 

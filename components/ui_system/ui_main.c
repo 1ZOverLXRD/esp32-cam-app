@@ -29,11 +29,40 @@ static lv_obj_t *s_app_page = NULL;
 static app_t *s_active_app = NULL;
 static bool s_exit_locked = false;
 
+/* WiFi 门禁 */
+bool s_wifi_connected = false;
+char s_sta_ip[16] = "0.0.0.0";
+
+/* ===== 全局状态栈 =====
+ * 每层存储实际状态值: MAINMENU=0, APP=1, SUB=2 ...
+ * push(值)存入，pop弹出顶部，peek查看当前层
+ */
+#define UI_STACK_MAX 8
+static int s_state_stack[UI_STACK_MAX];
+static int s_state_depth = 0;
+static void ui_push_explicit(int val);  // 前向声明
+
+int ui_get_depth(void) { return s_state_depth; }
+void ui_push_state(void) { ui_push_explicit(UI_STATE_APP); }
+void ui_push_sub(void)   { ui_push_explicit(UI_STATE_SUB); }
+void ui_pop_state(void)
+{
+    if (s_state_depth > 1) s_state_depth--;  // 保留MAINMENU
+}
+int ui_peek_state(void) {
+    return s_state_depth > 0 ? s_state_stack[s_state_depth - 1] : -1;
+}
+static void ui_push_explicit(int val) {
+    if (s_state_depth < UI_STACK_MAX)
+        s_state_stack[s_state_depth++] = val;
+}
+
 /* 长按退出叠层 */
 static lv_obj_t *s_exit_overlay = NULL;
 static lv_obj_t *s_exit_arc = NULL;
 static bool s_exit_animating = false;
-static volatile bool s_exit_cleanup_pending = false;  // 需要清理标志
+volatile bool s_exit_cleanup_pending = false;
+volatile bool s_app_handled = false;  // APP是否消费了事件
 
 /* 前向声明 */
 static void close_current_app(void);
@@ -69,16 +98,7 @@ static void cancel_exit(void)
     if (!s_exit_animating) return;
     s_exit_animating = false;
     if (s_exit_overlay) {
-        /* 直接淡出+删除（当前在摇杆任务上下文，安全） */
-        lv_anim_t a;
-        lv_anim_init(&a);
-        lv_anim_set_var(&a, s_exit_overlay);
-        lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)set_opa);
-        lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_0);
-        lv_anim_set_time(&a, 150);
-        lv_anim_set_ready_cb(&a, cancel_exit_fade_done);
-        lv_anim_start(&a);
-    } else {
+        lv_obj_del(s_exit_overlay);
         s_exit_overlay = NULL;
         s_exit_arc = NULL;
     }
@@ -226,6 +246,10 @@ void ui_main_menu_init(void)
 {
     ESP_LOGI(TAG, "Creating main menu carousel...");
 
+    s_state_depth = 0;
+    s_state_stack[0] = UI_STATE_MAINMENU;
+    s_state_depth = 1;
+
     for (int i = 0; i < TOTAL_CARDS; i++) {
         s_cards[i] = create_card(i);
         lv_obj_set_x(s_cards[i], CENTER_X + (i - s_center_idx) * STEP_X);
@@ -277,6 +301,7 @@ static void close_current_app(void)
         s_exit_arc = NULL;
     }
     s_exit_animating = false;
+    ui_pop_state();  // APP → MAINMENU
 }
 
 static void open_current_app(void)
@@ -297,7 +322,21 @@ static void open_current_app(void)
     s_active_app = NULL;
     if (real_idx == 0) s_active_app = &app_settings;
 
-    if (s_active_app && s_active_app->on_create) {
+    if (real_idx != 0 && !s_wifi_connected) {
+        /* 非 Settings APP + WiFi 未连接 → 显示阻断提示 */
+        lv_obj_t *ov = lv_obj_create(s_app_page);
+        lv_obj_set_size(ov, 240, 240);
+        lv_obj_set_style_bg_color(ov, lv_color_make(10, 10, 30), LV_STATE_DEFAULT);
+        lv_obj_set_style_border_width(ov, 0, LV_STATE_DEFAULT);
+        lv_obj_set_style_radius(ov, 0, LV_STATE_DEFAULT);
+        lv_obj_clear_flag(ov, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *warn = lv_label_create(ov);
+        lv_label_set_text(warn, "⚠\n请先配置 WiFi\n\n打开浏览器访问\nhttp://192.168.4.1\n\n设置网络后使用此功能");
+        lv_obj_set_style_text_color(warn, lv_color_make(200, 200, 200), LV_STATE_DEFAULT);
+        lv_obj_set_style_text_align(warn, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
+        lv_obj_center(warn);
+    } else if (s_active_app && s_active_app->on_create) {
         /* 由APP自行填充页面内容 */
         s_active_app->on_create(s_app_page);
     } else {
@@ -318,6 +357,7 @@ static void open_current_app(void)
         if (s_cards[i]) lv_obj_add_flag(s_cards[i], LV_OBJ_FLAG_HIDDEN);
 
     ui_anim_app_open(s_app_page, NULL);
+    ui_push_state();  // MAINMENU → APP
 }
 
 void ui_main_handle_joystick(joystick_evt_t evt)
@@ -329,21 +369,21 @@ void ui_main_handle_joystick(joystick_evt_t evt)
         return;
     }
 
-    /* 在APP内时，将事件分发给当前APP */
+    /* 在APP内时，将事件分发给当前APP（包括LONG_PRESS，让APP优先处理） */
     if (s_is_open) {
-        /* 长按退出APP（全局行为） */
-        if (evt == JOY_EVT_LONG_PRESS && !s_exit_animating) {
-            start_exit_animation();
-            return;
-        }
-        /* PRESS 在退出动画中取消 */
-        if (evt == JOY_EVT_PRESS && s_exit_animating) {
-            cancel_exit();
-            return;
-        }
-        /* 其余事件分发给当前APP */
+        s_app_handled = false;
         if (s_active_app && s_active_app->on_joystick)
             s_active_app->on_joystick(evt);
+
+        /* APP消费了事件（如子项收起），不触发退出 */
+        if (evt == JOY_EVT_LONG_PRESS && !s_exit_animating
+            && !s_app_handled && ui_peek_state() == UI_STATE_APP) {
+            start_exit_animation();
+        }
+        /* PRESS 在退出动画中取消，或depth>1时取消退出弧 */
+        if (evt == JOY_EVT_PRESS && s_exit_animating) {
+            cancel_exit();
+        }
         return;
     }
 

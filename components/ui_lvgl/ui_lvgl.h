@@ -12,6 +12,10 @@ esp_err_t ui_lvgl_init(void);
 void ui_lvgl_start_task(void);
 lv_disp_t *ui_lvgl_get_display(void);
 
+/* LVGL 互斥锁（双核竞态防护）*/
+void ui_lvgl_lock(void);
+void ui_lvgl_unlock(void);
+
 #ifdef __cplusplus
 }
 #endif
