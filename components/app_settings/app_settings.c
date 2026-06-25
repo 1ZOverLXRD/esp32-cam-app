@@ -1,5 +1,6 @@
 #include "app_t.h"
 #include "ui_main.h"
+#include "wifi_config.h"
 #include "esp_log.h"
 #include <string.h>
 #include <stdio.h>
@@ -25,7 +26,7 @@ typedef struct {
     lv_obj_t *header;       // 表头容器
     lv_obj_t *hdr_label;    // 表头文字
     lv_obj_t *indicator;    // ▶/▼ 指示器
-    lv_obj_t *sub_items[4]; // 子项最多4个
+    lv_obj_t *sub_items[6]; // 子项最多6个
     int sub_count;          // 子项数量
     int expanded;           // 是否展开
     int prev_selected;      // 折叠时原选中偏移恢复
@@ -49,14 +50,18 @@ static const char *HEADER_NAMES[SECTION_COUNT] = {
 
 /* 各段子项 */
 static const char *CAMERA_ITEMS[] = {"Resolution: 720p", "Frame Rate: 25fps", "Flip: Off"};
-static const char *WIFI_ITEMS[] = {"Status: Disconnected", "IP: --.--.--.--", "Password: ****"};
+/* WiFi Info 段：断开 vs 连接 */
+static const char *WIFI_ITEMS_DISCONNECTED[] = {"Status:  AP Mode / 192.168.4.1",
+                                                 "SSID:    ESP32-CAM",
+                                                 "Password: 12345678"};
+static const char *WIFI_ITEMS_CONNECTED[] = {"Status:  Connected"};
 static const char *ANIM_ITEMS[] = {"Speed: 100ms"};
 static const char *JOY_ITEMS[] = {"Direction: Center"};
 static const char *SCREEN_ITEMS[] = {"Brightness: 80%"};
 static const char *RESET_ITEMS[] = {"[ Press to reset ]"};
 
 static const char **SUB_ITEMS[SECTION_COUNT] = {
-    CAMERA_ITEMS, WIFI_ITEMS, ANIM_ITEMS, JOY_ITEMS, SCREEN_ITEMS, RESET_ITEMS
+    CAMERA_ITEMS, WIFI_ITEMS_DISCONNECTED, ANIM_ITEMS, JOY_ITEMS, SCREEN_ITEMS, RESET_ITEMS
 };
 
 static const int SUB_COUNTS[SECTION_COUNT] = {
@@ -138,19 +143,21 @@ static void set_sub_style(lv_obj_t *obj, int selected)
 static lv_obj_t *create_sub_item(lv_obj_t *parent, const char *text, int y_pos)
 {
     lv_obj_t *item = lv_obj_create(parent);
-    lv_obj_set_size(item, 220, SUB_H);
+    lv_obj_set_size(item, 210, SUB_H);
     lv_obj_set_style_radius(item, 4, LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(item, lv_color_make(25, 25, 45), LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(item, 0, LV_STATE_DEFAULT);
     lv_obj_clear_flag(item, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_y(item, y_pos);
-    lv_obj_set_x(item, 15);  // 缩进
+    lv_obj_set_x(item, 8);  // 统一左偏移 8px
 
     lv_obj_t *label = lv_label_create(item);
     lv_label_set_text(label, text);
     lv_obj_set_style_text_color(label, lv_color_white(), LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(label, lv_font_default(), LV_STATE_DEFAULT);
-    lv_obj_center(label);
+    lv_obj_set_width(label, 200);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    lv_obj_align(label, LV_ALIGN_LEFT_MID, 4, 0);
 
     lv_obj_set_style_opa(item, LV_OPA_COVER, LV_STATE_DEFAULT);
     lv_obj_add_flag(item, LV_OBJ_FLAG_HIDDEN);                 // 初始隐藏
@@ -222,6 +229,43 @@ static void collapse_arc_ready(lv_anim_t *a)
         s_col_overlay = NULL;
         s_col_arc = NULL;
     }
+}
+
+/* 更新 WiFi Info 段显示（连接状态变化时调用） */
+void update_wifi_info(void)
+{
+    section_t *sec = &s_sections[1];  // WiFi Info 固定 index=1
+    if (!sec->header) return;
+
+    int new_count;
+    const char **new_items;
+
+    if (s_wifi_connected) {
+        new_count = 1;
+        new_items = WIFI_ITEMS_CONNECTED;
+        /* Status 行动态带 IP */
+        static char status_buf[48];
+        snprintf(status_buf, sizeof(status_buf), "Status:  Connected (IP: %s)", s_sta_ip);
+        // 直接更新第一个子项的文字
+        if (sec->sub_items[0]) {
+            lv_obj_t *lbl = lv_obj_get_child(sec->sub_items[0], 0);
+            if (lbl) lv_label_set_text(lbl, status_buf);
+        }
+    } else {
+        new_count = 3;
+    }
+
+    /* 显隐子项 */
+    for (int j = 0; j < sec->sub_count; j++) {
+        if (sec->sub_items[j]) {
+            if (j < new_count)
+                lv_obj_clear_flag(sec->sub_items[j], LV_OBJ_FLAG_HIDDEN);
+            else
+                lv_obj_add_flag(sec->sub_items[j], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    sec->sub_count = new_count;
 }
 
 static void start_collapse_arc(void)
@@ -331,8 +375,23 @@ static void on_create(lv_obj_t *parent)
 
         /* 创建子项 */
         section_t *sec = &s_sections[i];
-        for (int j = 0; j < sec->sub_count; j++) {
-            sec->sub_items[j] = create_sub_item(s_page, SUB_ITEMS[i][j], y);
+        const char **items = SUB_ITEMS[i];
+        int count = SUB_COUNTS[i];
+
+        /* WiFi Info 段：动态根据连接状态选择显示内容 */
+        if (i == 1) {
+            if (s_wifi_connected) {
+                items = WIFI_ITEMS_CONNECTED;
+                count = 1;
+            } else {
+                items = WIFI_ITEMS_DISCONNECTED;
+                count = 3;
+            }
+        }
+
+        sec->sub_count = count;
+        for (int j = 0; j < count; j++) {
+            sec->sub_items[j] = create_sub_item(s_page, items[j], y);
             y += SUB_H + ITEM_GAP;
         }
     }

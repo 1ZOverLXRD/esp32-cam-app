@@ -19,6 +19,9 @@ extern char s_sta_ip[16];
 void ui_main_menu_init(void);
 void ui_main_handle_joystick(joystick_evt_t evt);
 
+/* 外部 APP 可调用的更新接口 */
+void update_wifi_info(void);
+
 /* 状态栈操作 */
 int  ui_get_depth(void);
 void ui_push_state(void);  /* push APP */

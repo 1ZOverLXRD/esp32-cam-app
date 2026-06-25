@@ -14,6 +14,7 @@ static const char *TAG = "WEB_CFG";
 static httpd_handle_t s_server = NULL;
 extern bool s_wifi_connected;
 extern char s_sta_ip[16];
+extern void update_wifi_info(void);
 
 /* 延迟切换纯 STA — 不能在 HTTP handler 内调 httpd_stop */
 static void sta_switch_timer_cb(TimerHandle_t xTimer)
@@ -30,6 +31,7 @@ static void sta_switch_timer_cb(TimerHandle_t xTimer)
     esp_wifi_connect();
 
     s_wifi_connected = true;
+    update_wifi_info();
 
     /* 获取 STA IP */
     esp_netif_t *netif = esp_netif_get_handle_from_ifkey("STA_DEF");
