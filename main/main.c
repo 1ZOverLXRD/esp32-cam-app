@@ -146,11 +146,6 @@ static void joy_event_task(void *arg)
     while (1) {
         if (xQueueReceive(joystick_evt_queue, &evt, portMAX_DELAY) == pdTRUE) {
             ui_lvgl_lock();
-            /* 处理WiFi UI待更新（已在LVGL锁内） */
-            if (s_wifi_ui_pending) {
-                s_wifi_ui_pending = false;
-                update_wifi_info();
-            }
             ui_main_handle_joystick(evt);
             ui_lvgl_unlock();
         }

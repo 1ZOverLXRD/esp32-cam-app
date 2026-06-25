@@ -131,7 +131,7 @@ static void set_header_style(lv_obj_t *obj, int selected)
         sec->cursor = lv_label_create(sec->header);
         lv_label_set_text(sec->cursor, ">");
         lv_obj_set_style_text_color(sec->cursor, lv_color_make(140, 140, 255), LV_STATE_DEFAULT);
-        lv_obj_align(sec->cursor, LV_ALIGN_LEFT_MID, 4, 0);
+        lv_obj_align(sec->cursor, LV_ALIGN_LEFT_MID, 2, 0);
     }
     if (sec->cursor)
         lv_obj_set_style_opa(sec->cursor, selected ? LV_OPA_COVER : LV_OPA_0, LV_STATE_DEFAULT);
@@ -243,6 +243,10 @@ static void collapse_arc_ready(lv_anim_t *a)
     update_expand(sec, 0);
     s_sub_selected = 0;
     s_skip_press = 1;
+    /* '>' 从子项移回表头 */
+    for (int j = 0; j < sec->sub_count; j++)
+        set_sub_style(sec->sub_items[j], 0);
+    set_header_style(sec->header, 1);
     if (s_col_overlay) {
         lv_obj_del(s_col_overlay);
         s_col_overlay = NULL;
@@ -502,6 +506,10 @@ static void on_joystick(joystick_evt_t evt)
             for (int i = 0; i < SECTION_COUNT; i++)
                 if (i != s_selected && s_sections[i].expanded)
                     { s_sections[i].expanded = 0; update_expand(&s_sections[i], 0); }
+            /* '>' 从表头移到子项 */
+            set_header_style(sec->header, 0);
+            s_sub_selected = 0;
+            set_sub_style(sec->sub_items[0], 1);
             ui_push_sub();
         }
         ESP_LOGI(TAG, "Selected: %s", HEADER_NAMES[s_selected]);
