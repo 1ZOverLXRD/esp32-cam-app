@@ -261,30 +261,35 @@ void update_wifi_info(void)
     if (!sec->header) return;
 
     if (s_wifi_connected) {
-        int base_y = lv_obj_get_y(sec->header) + HEADER_H + ITEM_GAP;
-        /* 全部项重叠压缩到同一位置，高度=0 */
-        for (int j = 0; j < 3 && j < sec->sub_count; j++) {
+        /* 删除 items[1+]（彻底消除任何占位可能） */
+        for (int j = 1; j < sec->sub_count; j++) {
             if (sec->sub_items[j]) {
-                lv_obj_set_y(sec->sub_items[j], base_y);
-                lv_obj_set_height(sec->sub_items[j], 0);
-                lv_obj_add_flag(sec->sub_items[j], LV_OBJ_FLAG_HIDDEN);
+                lv_obj_del(sec->sub_items[j]);
+                sec->sub_items[j] = NULL;
             }
         }
-        /* 只显示第1项 → 恢复高度 */
+        /* 更新第0项文字和Y位置 */
         if (sec->sub_items[0]) {
             lv_obj_t *lbl = lv_obj_get_child(sec->sub_items[0], 0);
             if (lbl) lv_label_set_text(lbl, "Status:  Connected");
+            int hy = lv_obj_get_y(sec->header);
+            lv_obj_set_y(sec->sub_items[0], hy + HEADER_H + ITEM_GAP);
             lv_obj_clear_flag(sec->sub_items[0], LV_OBJ_FLAG_HIDDEN);
-            lv_obj_set_height(sec->sub_items[0], SUB_H);
-            lv_obj_set_y(sec->sub_items[0], base_y);
         }
-        /* 强制重算滚动范围 */
-        lv_obj_invalidate(s_page);
-        lv_obj_scroll_to_y(s_page, 0, LV_ANIM_OFF);
         sec->sub_count = 1;
+        /* 后续项删完了，页面滚动范围自动缩减 */
     } else {
+        /* 断开时重建被删的子项 */
         sec->sub_count = 3;
-        for (int j = 0; j < 3 && j < 6; j++)
+        int hy = lv_obj_get_y(sec->header);
+        for (int j = 0; j < 3; j++) {
+            if (!sec->sub_items[j]) {
+                sec->sub_items[j] = create_sub_item(s_page,
+                    WIFI_ITEMS_DISCONNECTED[j],
+                    hy + HEADER_H + ITEM_GAP + j * (SUB_H + ITEM_GAP));
+            }
+        }
+        for (int j = 0; j < 3; j++)
             if (sec->sub_items[j])
                 lv_obj_clear_flag(sec->sub_items[j], LV_OBJ_FLAG_HIDDEN);
     }
