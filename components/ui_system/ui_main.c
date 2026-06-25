@@ -332,7 +332,7 @@ static void open_current_app(void)
         lv_obj_clear_flag(ov, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 
         lv_obj_t *warn = lv_label_create(ov);
-        lv_label_set_text(warn, "⚠\n请先配置 WiFi\n\n打开浏览器访问\nhttp://192.168.4.1\n\n设置网络后使用此功能");
+        lv_label_set_text(warn, LV_SYMBOL_WARNING "\nNo WiFi\n\nOpen browser to\nhttp://192.168.4.1\n\nConfigure WiFi\nto use this app");
         lv_obj_set_style_text_color(warn, lv_color_make(200, 200, 200), LV_STATE_DEFAULT);
         lv_obj_set_style_text_align(warn, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
         lv_obj_center(warn);

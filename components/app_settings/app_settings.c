@@ -52,8 +52,8 @@ static const char *HEADER_NAMES[SECTION_COUNT] = {
 static const char *CAMERA_ITEMS[] = {"Resolution: 720p", "Frame Rate: 25fps", "Flip: Off"};
 /* WiFi Info 段：断开 vs 连接 */
 static const char *WIFI_ITEMS_DISCONNECTED[] = {"Status:  AP Mode / 192.168.4.1",
-                                                 "SSID:    ESP32-CAM",
-                                                 "Password: 12345678"};
+                                                 "SSID:    COLDFISHESP32",
+                                                 "Password: 12060606"};
 static const char *WIFI_ITEMS_CONNECTED[] = {"Status:  Connected"};
 static const char *ANIM_ITEMS[] = {"Speed: 100ms"};
 static const char *JOY_ITEMS[] = {"Direction: Center"};
@@ -237,35 +237,33 @@ void update_wifi_info(void)
     section_t *sec = &s_sections[1];  // WiFi Info 固定 index=1
     if (!sec->header) return;
 
-    int new_count;
-    const char **new_items;
-
     if (s_wifi_connected) {
-        new_count = 1;
-        new_items = WIFI_ITEMS_CONNECTED;
-        /* Status 行动态带 IP */
-        static char status_buf[48];
-        snprintf(status_buf, sizeof(status_buf), "Status:  Connected (IP: %s)", s_sta_ip);
-        // 直接更新第一个子项的文字
+        /* 连接后：显示1项，隐藏2/3项，并重设可见项Y位置 */
+        static char status_buf[56];
+        if (s_sta_ip[0] == '\0' || strcmp(s_sta_ip, "0.0.0.0") == 0)
+            snprintf(status_buf, sizeof(status_buf), "Status:  Connected");
+        else
+            snprintf(status_buf, sizeof(status_buf), "Status:  Connected (IP: %s)", s_sta_ip);
+
         if (sec->sub_items[0]) {
             lv_obj_t *lbl = lv_obj_get_child(sec->sub_items[0], 0);
             if (lbl) lv_label_set_text(lbl, status_buf);
+            lv_obj_clear_flag(sec->sub_items[0], LV_OBJ_FLAG_HIDDEN);
+            /* 移到表头下方正确位置 */
+            int hy = lv_obj_get_y(sec->header);
+            lv_obj_set_y(sec->sub_items[0], hy + HEADER_H + ITEM_GAP);
         }
-    } else {
-        new_count = 3;
-    }
-
-    /* 显隐子项 */
-    for (int j = 0; j < sec->sub_count; j++) {
-        if (sec->sub_items[j]) {
-            if (j < new_count)
-                lv_obj_clear_flag(sec->sub_items[j], LV_OBJ_FLAG_HIDDEN);
-            else
+        for (int j = 1; j < sec->sub_count; j++) {
+            if (sec->sub_items[j])
                 lv_obj_add_flag(sec->sub_items[j], LV_OBJ_FLAG_HIDDEN);
         }
+    } else {
+        /* 断开恢复3项 */
+        for (int j = 0; j < 3 && j < sec->sub_count; j++) {
+            if (sec->sub_items[j])
+                lv_obj_clear_flag(sec->sub_items[j], LV_OBJ_FLAG_HIDDEN);
+        }
     }
-
-    sec->sub_count = new_count;
 }
 
 static void start_collapse_arc(void)

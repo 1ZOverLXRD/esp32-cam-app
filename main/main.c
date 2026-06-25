@@ -43,9 +43,9 @@ static void wifi_ap_init(void)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
     wifi_config_t ap_config = {
         .ap = {
-            .ssid = "ESP32-CAM",
+            .ssid = WIFI_AP_SSID,
             .ssid_len = 0,
-            .password = "12345678",
+            .password = WIFI_AP_PASS,
             .max_connection = 4,
             .authmode = WIFI_AUTH_WPA_WPA2_PSK,
         },
@@ -53,15 +53,13 @@ static void wifi_ap_init(void)
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    /* 注册 STA 连接事件回调 */
+    ESP_LOGI(TAG, "WiFi AP started: " WIFI_AP_SSID " / " WIFI_AP_PASS);
     esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED,
         &wifi_event_handler, NULL);
     esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
         &wifi_event_handler, NULL);
     esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED,
         &wifi_event_handler, NULL);
-
-    ESP_LOGI(TAG, "WiFi AP started: ESP32-CAM / 12345678");
 }
 
 void app_main(void)
@@ -133,12 +131,15 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
         ip_event_got_ip_t *evt = (ip_event_got_ip_t *)data;
         snprintf(s_sta_ip, sizeof(s_sta_ip), IPSTR, IP2STR(&evt->ip_info.ip));
         ESP_LOGI(TAG, "STA got IP: %s", s_sta_ip);
-        /* s_wifi_connected 由 sta_switch_timer_cb 设置 */
+        /* 更新UI显示IP */
+        extern void update_wifi_info(void);
+        update_wifi_info();
     }
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         ESP_LOGI(TAG, "STA disconnected");
-        /* 不做自动回退，标记断开 */
         s_wifi_connected = false;
+        extern void update_wifi_info(void);
+        update_wifi_info();
     }
 }
 

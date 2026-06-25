@@ -31,17 +31,11 @@ static void sta_switch_timer_cb(TimerHandle_t xTimer)
     esp_wifi_connect();
 
     s_wifi_connected = true;
+    /* IP 还没分配（异步DHCP），等 IP_EVENT_STA_GOT_IP 事件 */
+    s_sta_ip[0] = '\0';
     update_wifi_info();
 
-    /* 获取 STA IP */
-    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("STA_DEF");
-    if (netif) {
-        esp_netif_ip_info_t ip;
-        esp_netif_get_ip_info(netif, &ip);
-        snprintf(s_sta_ip, sizeof(s_sta_ip), IPSTR, IP2STR(&ip.ip));
-    }
-
-    ESP_LOGI(TAG, "STA mode active, IP: %s", s_sta_ip);
+    ESP_LOGI(TAG, "STA mode active, waiting for IP...");
 }
 
 static esp_err_t handler_index(httpd_req_t *req)
