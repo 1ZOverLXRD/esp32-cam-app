@@ -428,10 +428,10 @@ static void on_joystick(joystick_evt_t evt)
     /* Joystick Report 段展开时：每次事件更新实时值 */
     if (s_selected == 2 && s_sections[2].expanded) {
         char buf[40];
-        float x = joystick_read_x();
-        float y = joystick_read_y();
+        float x = joystick_read_y();
+        float y = joystick_read_x();
         int sw = joystick_read_sw();
-        snprintf(buf, sizeof(buf), "X:%.2f  Y:%.2f  SW:%d", x, y, sw);
+        snprintf(buf, sizeof(buf), "X:%.2f  Y:%.2f  SW:%d", x, y, sw ? 0 : 1);
         if (s_sections[2].sub_items[0]) {
             lv_obj_t *lbl = lv_obj_get_child(s_sections[2].sub_items[0], 0);
             if (lbl) lv_label_set_text(lbl, buf);
