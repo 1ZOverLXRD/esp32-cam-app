@@ -117,25 +117,38 @@ static void update_expand(section_t *sec, int expand)
     }
 }
 
-/* 选中样式 */
+/* 选中样式 — '>' 游标标记选中 */
 static void set_header_style(lv_obj_t *obj, int selected)
 {
-    if (selected) {
-        lv_obj_set_style_bg_color(obj, lv_color_make(80, 80, 150), LV_STATE_DEFAULT);
-        lv_obj_set_style_border_width(obj, 2, LV_STATE_DEFAULT);
-        lv_obj_set_style_border_color(obj, lv_color_make(140, 140, 255), LV_STATE_DEFAULT);
-    } else {
-        lv_obj_set_style_bg_color(obj, lv_color_make(35, 35, 60), LV_STATE_DEFAULT);
-        lv_obj_set_style_border_width(obj, 0, LV_STATE_DEFAULT);
-    }
+    // 找对应段，获取 indicator
+    section_t *sec = NULL;
+    for (int i = 0; i < SECTION_COUNT; i++)
+        if (s_sections[i].header == obj) { sec = &s_sections[i]; break; }
+    if (!sec || !sec->indicator) return;
+
+    const char *expand = sec->expanded ? "-" : "+";
+    char buf[8];
+    snprintf(buf, sizeof(buf), selected ? "> [%s]" : "  [%s]", expand);
+    lv_label_set_text(sec->indicator, buf);
 }
 
 static void set_sub_style(lv_obj_t *obj, int selected)
 {
     if (selected) {
         lv_obj_set_style_bg_color(obj, lv_color_make(60, 60, 110), LV_STATE_DEFAULT);
+        /* 查找子项中的 '>' 游标，没有则创建 */
+        lv_obj_t *cursor = lv_obj_get_child(obj, 1); // 第二个子控件（第一个是label）
+        if (!cursor) {
+            cursor = lv_label_create(obj);
+            lv_label_set_text(cursor, ">");
+            lv_obj_set_style_text_color(cursor, lv_color_make(140, 140, 255), LV_STATE_DEFAULT);
+            lv_obj_align(cursor, LV_ALIGN_LEFT_MID, 2, 0);
+        }
+        lv_obj_clear_flag(cursor, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_set_style_bg_color(obj, lv_color_make(25, 25, 45), LV_STATE_DEFAULT);
+        lv_obj_t *cursor = lv_obj_get_child(obj, 1); // 第二个子控件
+        if (cursor) lv_obj_add_flag(cursor, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -238,31 +251,39 @@ void update_wifi_info(void)
     if (!sec->header) return;
 
     if (s_wifi_connected) {
-        /* 连接后：显示1项，隐藏2/3项，并重设可见项Y位置 */
-        static char status_buf[56];
-        if (s_sta_ip[0] == '\0' || strcmp(s_sta_ip, "0.0.0.0") == 0)
-            snprintf(status_buf, sizeof(status_buf), "Status:  Connected");
-        else
-            snprintf(status_buf, sizeof(status_buf), "Status:  Connected (IP: %s)", s_sta_ip);
-
+        /* 2项: Status + IP */
         if (sec->sub_items[0]) {
-            lv_obj_t *lbl = lv_obj_get_child(sec->sub_items[0], 0);
-            if (lbl) lv_label_set_text(lbl, status_buf);
             lv_obj_clear_flag(sec->sub_items[0], LV_OBJ_FLAG_HIDDEN);
-            /* 移到表头下方正确位置 */
+            lv_obj_t *lbl = lv_obj_get_child(sec->sub_items[0], 0);
+            if (lbl) lv_label_set_text(lbl, "Status:  Connected");
             int hy = lv_obj_get_y(sec->header);
             lv_obj_set_y(sec->sub_items[0], hy + HEADER_H + ITEM_GAP);
         }
-        for (int j = 1; j < sec->sub_count; j++) {
+        /* IP 行（替换原 SSID 位置） */
+        if (sec->sub_count >= 2 && sec->sub_items[1]) {
+            lv_obj_clear_flag(sec->sub_items[1], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_t *lbl = lv_obj_get_child(sec->sub_items[1], 0);
+            if (lbl) {
+                char ip_buf[32];
+                if (s_sta_ip[0] == '\0' || strcmp(s_sta_ip, "0.0.0.0") == 0)
+                    snprintf(ip_buf, sizeof(ip_buf), "IP:      waiting...");
+                else
+                    snprintf(ip_buf, sizeof(ip_buf), "IP:      %s", s_sta_ip);
+                lv_label_set_text(lbl, ip_buf);
+            }
+            int hy = lv_obj_get_y(sec->header);
+            lv_obj_set_y(sec->sub_items[1], hy + HEADER_H + ITEM_GAP + SUB_H + ITEM_GAP);
+        }
+        /* 隐藏第3项（原 Password） */
+        for (int j = 2; j < sec->sub_count; j++)
             if (sec->sub_items[j])
                 lv_obj_add_flag(sec->sub_items[j], LV_OBJ_FLAG_HIDDEN);
-        }
+        sec->sub_count = 2;  // 导航只走2项
     } else {
-        /* 断开恢复3项 */
-        for (int j = 0; j < 3 && j < sec->sub_count; j++) {
+        sec->sub_count = 3;
+        for (int j = 0; j < 3 && j < 6; j++)
             if (sec->sub_items[j])
                 lv_obj_clear_flag(sec->sub_items[j], LV_OBJ_FLAG_HIDDEN);
-        }
     }
 }
 

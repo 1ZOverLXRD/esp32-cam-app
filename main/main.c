@@ -124,6 +124,12 @@ void app_main(void)
     }
 }
 
+static void async_update_wifi(void *arg) {
+    (void)arg;
+    extern void update_wifi_info(void);
+    update_wifi_info();
+}
+
 static void wifi_event_handler(void *arg, esp_event_base_t base,
                                 int32_t id, void *data)
 {
@@ -131,15 +137,12 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
         ip_event_got_ip_t *evt = (ip_event_got_ip_t *)data;
         snprintf(s_sta_ip, sizeof(s_sta_ip), IPSTR, IP2STR(&evt->ip_info.ip));
         ESP_LOGI(TAG, "STA got IP: %s", s_sta_ip);
-        /* 更新UI显示IP */
-        extern void update_wifi_info(void);
-        update_wifi_info();
+        lv_async_call(&async_update_wifi, NULL);
     }
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         ESP_LOGI(TAG, "STA disconnected");
         s_wifi_connected = false;
-        extern void update_wifi_info(void);
-        update_wifi_info();
+        lv_async_call(&async_update_wifi, NULL);
     }
 }
 
