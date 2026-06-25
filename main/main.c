@@ -131,9 +131,15 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
         ip_event_got_ip_t *evt = (ip_event_got_ip_t *)data;
         snprintf(s_sta_ip, sizeof(s_sta_ip), IPSTR, IP2STR(&evt->ip_info.ip));
         ESP_LOGI(TAG, "STA got IP: %s", s_sta_ip);
+        s_wifi_switching = false;  // 切换完成
+        s_wifi_connected = true;
         s_wifi_ui_pending = true;
     }
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        if (s_wifi_switching) {
+            ESP_LOGI(TAG, "STA disconnect ignored (mode switching)");
+            return;
+        }
         ESP_LOGI(TAG, "STA disconnected");
         s_wifi_connected = false;
         s_wifi_ui_pending = true;

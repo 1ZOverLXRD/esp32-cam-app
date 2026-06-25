@@ -32,6 +32,7 @@ static bool s_exit_locked = false;
 /* WiFi 门禁 */
 bool s_wifi_connected = false;
 char s_sta_ip[16] = "0.0.0.0";
+bool s_wifi_switching = false;  // 切模式中，忽略虚假断开
 
 /* WiFi UI 待更新标志 + LVGL 定时器 */
 volatile bool s_wifi_ui_pending = false;
