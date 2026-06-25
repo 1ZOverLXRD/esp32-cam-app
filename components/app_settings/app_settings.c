@@ -277,7 +277,10 @@ void update_wifi_info(void)
             lv_obj_clear_flag(sec->sub_items[0], LV_OBJ_FLAG_HIDDEN);
         }
         sec->sub_count = 1;
-        /* 后续项删完了，页面滚动范围自动缩减 */
+        /* 重排所有段 Y 位置（WiFi 项数变了，后续段需上移） */
+        for (int i = 0; i < SECTION_COUNT; i++)
+            if (s_sections[i].header)
+                update_expand(&s_sections[i], s_sections[i].expanded);
     } else {
         /* 断开时重建被删的子项 */
         sec->sub_count = 3;
