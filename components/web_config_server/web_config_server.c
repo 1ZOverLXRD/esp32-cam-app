@@ -142,9 +142,10 @@ static esp_err_t handler_wifi_test(httpd_req_t *req)
         char resp[128];
         snprintf(resp, sizeof(resp), "{\"ok\":true,\"ip\":\"%s\"}", ip_str);
 
-        /* 连接成功 → 立刻持LVGL锁刷新UI */
+        /* 连接成功 → 立刻持LVGL锁刷新UI + 设标志位让定时器兜底 */
         s_wifi_connected = true;
         s_sta_ip[0] = '\0';
+        s_wifi_ui_pending = true;
         ui_lvgl_lock();
         update_wifi_info();
         ui_lvgl_unlock();
