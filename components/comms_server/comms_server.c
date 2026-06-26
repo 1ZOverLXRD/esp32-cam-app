@@ -4,6 +4,7 @@
 #include "esp_log.h"
 #include "cJSON.h"
 #include <string.h>
+#include <sys/time.h>
 
 static const char *TAG = "COMMS";
 static int s_server_fd = -1;
@@ -97,6 +98,9 @@ static void tcp_server_task(void *arg)
     int opt = 1;
     setsockopt(s_server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
+    struct timeval timeout = {10, 0}; // recv 10秒超时
+    setsockopt(s_server_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
     if (bind(s_server_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         ESP_LOGE(TAG, "Socket bind failed");
         close(s_server_fd);
@@ -151,7 +155,7 @@ static void tcp_server_task(void *arg)
 
 esp_err_t comms_server_init(void)
 {
-    xTaskCreate(tcp_server_task, "comms", 4096, NULL, 4, NULL);
+    xTaskCreatePinnedToCore(tcp_server_task, "comms", 4096, NULL, 4, NULL, 1);
     ESP_LOGI(TAG, "Comms server started");
     return ESP_OK;
 }

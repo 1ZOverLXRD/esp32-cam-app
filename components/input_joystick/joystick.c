@@ -217,7 +217,7 @@ esp_err_t joystick_start_poll_task(void)
         return ESP_ERR_INVALID_STATE;
     }
 
-    BaseType_t ret = xTaskCreate(joystick_poll_task, "joy_poll", 3072, NULL, 5, &s_poll_task_handle);
+    BaseType_t ret = xTaskCreatePinnedToCore(joystick_poll_task, "joy_poll", 3072, NULL, 5, &s_poll_task_handle, 0);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Task create failed");
         return ESP_ERR_NO_MEM;

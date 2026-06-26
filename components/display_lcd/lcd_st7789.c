@@ -32,7 +32,7 @@ esp_err_t lcd_st7789_init(void)
         .miso_io_num = -1,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = LCD_WIDTH * LCD_HEIGHT * sizeof(uint16_t) / 6, // 全帧分6次发，防DMA池溢出
+        .max_transfer_sz = LCD_WIDTH * LCD_HEIGHT * sizeof(uint16_t) / 2, // 全帧分2次发
     };
     ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
 

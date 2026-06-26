@@ -111,9 +111,6 @@ void app_main(void)
     ESP_ERROR_CHECK(web_config_server_start());
     ESP_LOGI(TAG, "All init OK!");
 
-    // ---- Event task ----
-    xTaskCreatePinnedToCore(joy_event_task, "joy_evt", 4096, NULL, 4, NULL, 1);
-
     while (1) {
         ESP_LOGI(TAG, "Main alive");
         vTaskDelay(pdMS_TO_TICKS(5000));

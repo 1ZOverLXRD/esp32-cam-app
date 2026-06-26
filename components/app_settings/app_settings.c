@@ -47,7 +47,7 @@ static const char *CAMERA_ITEMS[] = {"Resolution: 720p", "Frame Rate: 25fps", "F
 static const char *WIFI_ITEMS_DISCONNECTED[] = {"Status:  AP Mode / 192.168.4.1",
                                                  "SSID:    COLDFISHESP32",
                                                  "Password: 12060606"};
-static const char *JOY_ITEMS[] = {"X:0.00  Y:0.00  SW:1"};
+static const char *JOY_ITEMS[] = {"X:0.00  Y:0.00"};
 
 static const char **SUB_ITEMS[SECTION_COUNT] = {
     CAMERA_ITEMS, WIFI_ITEMS_DISCONNECTED, JOY_ITEMS,
@@ -430,8 +430,7 @@ static void on_joystick(joystick_evt_t evt)
         char buf[40];
         float x = joystick_read_y();
         float y = joystick_read_x();
-        int sw = joystick_read_sw();
-        snprintf(buf, sizeof(buf), "X:%.2f  Y:%.2f  SW:%d", x, y, sw);
+        snprintf(buf, sizeof(buf), "X:%.2f  Y:%.2f", x, y);
         if (s_sections[2].sub_items[0]) {
             lv_obj_t *lbl = lv_obj_get_child(s_sections[2].sub_items[0], 0);
             if (lbl) lv_label_set_text(lbl, buf);
