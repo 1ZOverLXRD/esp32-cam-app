@@ -232,6 +232,8 @@ static void enter_stream_mode(void)
     /* 清空选择界面（含 Camera 标题），避免重叠 */
     lv_obj_clean(s_page);
     s_hint = NULL;
+    s_ip_label = NULL;
+    s_ip_refresh_timer = NULL;
     s_stream_btn = s_tft_btn = NULL;
 
     if (init_camera(FRAMESIZE_HD, PIXFORMAT_JPEG) != ESP_OK) {
