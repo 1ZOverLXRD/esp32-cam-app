@@ -47,14 +47,13 @@ ESP32 主菜单
 6. Android 收到帧后送入 TFLite 推理（Trash detection）
 
 ### Local TFT Display 模式
-1. 初始化 OV5640（QVGA 320×240, JPEG 输出, 5fps）
-2. LVGL 定时器（100ms）取帧：
-   - `esp_camera_fb_get()` → 获取 JPEG 帧
-   - JPEG 解码为 RGB565 → 缩放到 240×240
-   - 直接写入 LVGL 全帧缓冲 `lv_disp_drv_t.draw_buf`
+1. 初始化 OV5640（QVGA 320×240, RGB565 输出）
+2. LVGL 定时器取帧：
+   - `esp_camera_fb_get()` → 获取 RGB565 帧（147KB）
+   - 裁剪/缩放从 320×240 到 240×240（或者直接居中裁剪）
+   - `memcpy` 写入 LVGL 全帧缓冲 `disp_drv.draw_buf`
    - `lv_disp_flush_ready()` 通知显示驱动刷新
-3. 帧率约 5-10fps（JPEG 解码是瓶颈）
-4. LEFT/RIGHT 无操作，LONG_PRESS 退出显示
+3. 无 CPU JPEG 解码，纯内存拷贝 + SPI DMA，帧率取决于 OV5640 输出速度和 SPI 带宽
 
 ### 退出
 LONG_PRESS → 关摄像头 → `esp_camera_deinit()` → 回到模式选择画面
