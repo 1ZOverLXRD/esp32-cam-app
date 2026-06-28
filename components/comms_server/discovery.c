@@ -57,12 +57,16 @@ static void discovery_task(void *arg)
 
         if (n >= 6 && memcmp(buf, "ESP32?", 6) == 0) {
             char resp[32];
-            esp_netif_t *netif = esp_netif_get_handle_from_ifkey("STA_DEF");
+            /* 遍历网口取 STA IP（同 app_camera 的 get_sta_ip_str） */
             char ip_str[16] = "0.0.0.0";
-            if (netif) {
+            for (esp_netif_t *ni = esp_netif_next(NULL); ni; ni = esp_netif_next(ni)) {
+                const char *key = esp_netif_get_ifkey(ni);
+                if (key && strstr(key, "ap")) continue;  // 跳过 AP
                 esp_netif_ip_info_t ip_info;
-                if (esp_netif_get_ip_info(netif, &ip_info) == ESP_OK)
+                if (esp_netif_get_ip_info(ni, &ip_info) == ESP_OK && ip_info.ip.addr != 0) {
                     snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ip_info.ip));
+                    break;
+                }
             }
             int rlen = snprintf(resp, sizeof(resp), "ESP32:%s", ip_str);
             sendto(fd, resp, rlen, 0,

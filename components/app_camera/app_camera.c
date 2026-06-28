@@ -25,13 +25,27 @@ static lv_obj_t *s_tft_btn = NULL;
 static const char *get_sta_ip_str(void)
 {
     static char buf[16] = "0.0.0.0";
+    esp_netif_t *sta = NULL;
+    esp_netif_t *ap  = NULL;
+    /* 先分类网口 */
     for (esp_netif_t *n = esp_netif_next(NULL); n; n = esp_netif_next(n)) {
-        /* 跳过运行 DHCP 服务器的网口（AP 模式） */
-        esp_netif_dhcp_status_t s;
-        if (esp_netif_dhcps_get_status(n, &s) == ESP_OK && s == ESP_NETIF_DHCP_STARTED)
-            continue;
+        const char *key = esp_netif_get_ifkey(n);
+        if (key && strstr(key, "sta"))  sta = n;
+        if (key && strstr(key, "ap"))   ap  = n;
+    }
+    /* 优先返回 STA IP */
+    if (sta) {
         esp_netif_ip_info_t ip;
-        if (esp_netif_get_ip_info(n, &ip) == ESP_OK) {
+        if (esp_netif_get_ip_info(sta, &ip) == ESP_OK && ip.ip.addr != 0) {
+            snprintf(buf, sizeof(buf), IPSTR, IP2STR(&ip.ip));
+            return buf;
+        }
+    }
+    /* STA 没有 IP，尝试其他非 AP 网口 */
+    for (esp_netif_t *n = esp_netif_next(NULL); n; n = esp_netif_next(n)) {
+        if (n == ap) continue;
+        esp_netif_ip_info_t ip;
+        if (esp_netif_get_ip_info(n, &ip) == ESP_OK && ip.ip.addr != 0) {
             snprintf(buf, sizeof(buf), IPSTR, IP2STR(&ip.ip));
             break;
         }
