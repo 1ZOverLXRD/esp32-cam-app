@@ -283,12 +283,18 @@ static void rebuild_mode_ui(void)
     lv_obj_center(tlbl);
 
     s_hint = lv_label_create(s_page);
-    lv_label_set_text(s_hint, "UP/DOWN select  PRESS confirm");
+    char hint[64];
+    snprintf(hint, sizeof(hint), "STA: %s | UP/DOWN select  PRESS confirm",
+             s_sta_ip);
+    lv_label_set_text(s_hint, hint);
     lv_obj_set_style_text_color(s_hint, lv_color_make(150, 150, 180), LV_STATE_DEFAULT);
     lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -16);
 }
 
 /* ===================== APP 生命周期 ===================== */
+
+/* Wifi STA IP（由 web_config_server 切换 STA 时设置）*/
+extern char s_sta_ip[16];
 
 static void on_create(lv_obj_t *parent)
 {
@@ -307,7 +313,7 @@ static void on_create(lv_obj_t *parent)
     s_skip_press = false;
 
     rebuild_mode_ui();
-    ESP_LOGI(TAG, "Camera app created");
+    ESP_LOGI(TAG, "Camera app created, STA IP: %s", s_sta_ip);
 }
 
 static void on_destroy(void)
