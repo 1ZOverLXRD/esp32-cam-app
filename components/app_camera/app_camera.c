@@ -382,15 +382,14 @@ static void on_create(lv_obj_t *parent)
     s_focus_idx = FOCUS_STREAM;
     s_skip_press = false;
 
-    /* 确保 STA 网口的 DHCP 客户端在运行 */
+    /* 强制重启 STA 网口 DHCP（web_config 切换模式后 DHCP 可能卡死） */
     for (esp_netif_t *n = esp_netif_next(NULL); n; n = esp_netif_next(n)) {
         const char *key = esp_netif_get_ifkey(n);
         if (!key || !strstr(key, "STA")) continue;
-        esp_netif_dhcp_status_t s;
-        if (esp_netif_dhcpc_get_status(n, &s) == ESP_OK && s == ESP_NETIF_DHCP_STOPPED) {
-            esp_netif_dhcpc_start(n);
-            ESP_LOGI(TAG, "DHCP client started on %s", key);
-        }
+        esp_netif_dhcpc_stop(n);
+        vTaskDelay(pdMS_TO_TICKS(100));
+        esp_netif_dhcpc_start(n);
+        ESP_LOGI(TAG, "DHCP restart on %s", key);
         break;
     }
 
