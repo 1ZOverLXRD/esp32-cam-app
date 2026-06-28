@@ -355,14 +355,14 @@ static void on_joystick(joystick_evt_t evt)
     /* ── 模式选择界面 ── */
     switch (evt) {
         case JOY_EVT_UP:
-            s_focus_idx = FOCUS_STREAM;
-            update_focus_style();
-            ESP_LOGD(TAG, "focus -> Stream");
-            break;
-        case JOY_EVT_DOWN:
             s_focus_idx = FOCUS_TFT;
             update_focus_style();
             ESP_LOGD(TAG, "focus -> TFT");
+            break;
+        case JOY_EVT_DOWN:
+            s_focus_idx = FOCUS_STREAM;
+            update_focus_style();
+            ESP_LOGD(TAG, "focus -> Stream");
             break;
         case JOY_EVT_PRESS:
             if (s_focus_idx == FOCUS_STREAM) {
