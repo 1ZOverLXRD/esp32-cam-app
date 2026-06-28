@@ -1,5 +1,7 @@
 #include "comms_server.h"
 #include "lwip/sockets.h"
+#include "lwip/inet.h"
+#include "lwip/netdb.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -10,6 +12,9 @@
 static const char *TAG = "COMMS";
 static int s_server_fd = -1;
 static int s_client_fd = -1;
+
+uint32_t g_android_ip = 0;
+uint16_t g_android_port = 0;
 
 #define PORT 8080
 
@@ -115,7 +120,14 @@ static void handle_packet(int fd, uint8_t cmd, uint16_t seq,
     case 0x20: { // StreamStartUdp
         if (plen >= 2) {
             uint16_t android_port = payload[0] | (payload[1] << 8);
-            ESP_LOGI(TAG, "StreamStartUdp -> port %u", android_port);
+            struct sockaddr_in client;
+            socklen_t client_len = sizeof(client);
+            if (getpeername(fd, (struct sockaddr *)&client, &client_len) == 0) {
+                g_android_ip = client.sin_addr.s_addr;
+                g_android_port = android_port;
+                ESP_LOGI(TAG, "StreamStartUdp -> %s:%u",
+                         inet_ntoa(client.sin_addr), android_port);
+            }
             uint8_t info[5];
             info[0] = 640 & 0xFF; info[1] = (640 >> 8) & 0xFF;
             info[2] = 480 & 0xFF; info[3] = (480 >> 8) & 0xFF;
