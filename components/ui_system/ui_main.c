@@ -6,6 +6,8 @@
 
 /* APP 实例（由各 app_xxx.c 定义） */
 extern app_t app_settings;
+extern app_t app_weather;
+extern app_t app_camera;
 
 static const char *TAG = "UI_MAIN";
 
@@ -321,6 +323,8 @@ static void open_current_app(void)
     /* 查找并激活对应的APP实例 */
     s_active_app = NULL;
     if (real_idx == 0) s_active_app = &app_settings;
+    else if (real_idx == 2) s_active_app = &app_weather;
+    else if (real_idx == 3) s_active_app = &app_camera;
 
     if (real_idx != 0 && !s_wifi_connected) {
         /* 非 Settings APP + WiFi 未连接 → 显示阻断提示 */
