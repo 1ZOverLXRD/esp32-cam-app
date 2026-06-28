@@ -1,9 +1,10 @@
 #include "comms_server.h"
 #include "lwip/sockets.h"
-#include "lwip/netdb.h"
 #include "esp_log.h"
-#include "cJSON.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <string.h>
+#include <stdint.h>
 #include <sys/time.h>
 
 static const char *TAG = "COMMS";
@@ -11,72 +12,129 @@ static int s_server_fd = -1;
 static int s_client_fd = -1;
 
 #define PORT 8080
-#define BUF_SIZE 512
 
-/* 收到天气数据 */
-static void handle_weather(const char *json)
+/* 读一个完整二进制包，返回0=成功, -1=断开 */
+static int read_packet(int fd, uint8_t *cmd, uint16_t *seq,
+                        uint8_t *buf, uint32_t *len)
 {
-    cJSON *root = cJSON_Parse(json);
-    if (!root) return;
+    uint8_t header[7];
+    int n = read(fd, header, 7);
+    if (n <= 0) return -1;
+    if (n < 7) return -1;
 
-    cJSON *tmp = cJSON_GetObjectItem(root, "tmp");
-    cJSON *hum = cJSON_GetObjectItem(root, "hum");
-    cJSON *cd = cJSON_GetObjectItem(root, "cd");
-    cJSON *wnd = cJSON_GetObjectItem(root, "wnd");
+    uint32_t pktlen = (uint32_t)header[0]
+                    | ((uint32_t)header[1] << 8)
+                    | ((uint32_t)header[2] << 16)
+                    | ((uint32_t)header[3] << 24);
+    *cmd = header[4];
+    *seq = (uint16_t)header[5] | ((uint16_t)header[6] << 8);
 
-    float temp = tmp ? (float)tmp->valuedouble : 0;
-    int humidity = hum ? hum->valueint : 0;
-    int code = cd ? cd->valueint : 0;
-    float wind = wnd ? (float)wnd->valuedouble : 0;
-
-    ESP_LOGI(TAG, "Weather: %.1f°C, %d%%, code=%d, wind=%.1f", temp, humidity, code, wind);
-
-    /* TODO: 更新天气 App 显示 */
-    cJSON_Delete(root);
-}
-
-/* 收到垃圾识别结果 */
-static void handle_trash(const char *json)
-{
-    cJSON *root = cJSON_Parse(json);
-    if (!root) return;
-
-    cJSON *cat = cJSON_GetObjectItem(root, "c");
-    cJSON *prob = cJSON_GetObjectItem(root, "p");
-
-    const char *category = cat ? cat->valuestring : "未知";
-    float confidence = prob ? (float)prob->valuedouble : 0;
-
-    ESP_LOGI(TAG, "Trash: %s (%.1f%%)", category, confidence);
-
-    /* TODO: 更新垃圾识别 App 显示 */
-    cJSON_Delete(root);
-}
-
-/* 处理接收到的 JSON 消息 */
-static void process_message(const char *msg)
-{
-    cJSON *root = cJSON_Parse(msg);
-    if (!root) {
-        ESP_LOGW(TAG, "Invalid JSON: %s", msg);
-        return;
-    }
-
-    cJSON *type = cJSON_GetObjectItem(root, "t");
-    if (!type || !cJSON_IsString(type)) {
-        cJSON_Delete(root);
-        return;
-    }
-
-    if (strcmp(type->valuestring, "weather") == 0) {
-        handle_weather(msg);
-    } else if (strcmp(type->valuestring, "trash") == 0) {
-        handle_trash(msg);
+    if (pktlen > 3) {
+        uint32_t to_read = pktlen - 3;
+        uint32_t offset = 0;
+        while (offset < to_read) {
+            n = read(fd, buf + offset, to_read - offset);
+            if (n <= 0) return -1;
+            offset += n;
+        }
+        *len = to_read;
     } else {
-        ESP_LOGW(TAG, "Unknown message type: %s", type->valuestring);
+        *len = 0;
+    }
+    return 0;
+}
+
+/* 发响应包 */
+static void send_response(int fd, uint8_t cmd, uint16_t seq,
+                           const uint8_t *payload, uint32_t plen)
+{
+    uint32_t total = 3 + plen;  // CMD + SEQ + payload
+    uint8_t header[7];
+    header[0] = total & 0xFF;
+    header[1] = (total >> 8) & 0xFF;
+    header[2] = (total >> 16) & 0xFF;
+    header[3] = (total >> 24) & 0xFF;
+    header[4] = cmd;
+    header[5] = seq & 0xFF;
+    header[6] = (seq >> 8) & 0xFF;
+
+    write(fd, header, 7);
+    if (plen > 0) write(fd, payload, plen);
+}
+
+static void send_error(int fd, uint16_t seq, uint8_t orig_cmd, uint8_t err)
+{
+    uint8_t payload[2] = {orig_cmd, err};
+    send_response(fd, 0xFF, seq, payload, 2);
+}
+
+/* 命令分发 */
+static void handle_packet(int fd, uint8_t cmd, uint16_t seq,
+                           const uint8_t *payload, uint32_t plen)
+{
+    switch (cmd) {
+    case 0x01: // IsValid
+        send_response(fd, 0x01, seq, NULL, 0);
+        ESP_LOGI(TAG, "IsValid");
+        break;
+
+    case 0x02: { // GetWeather
+        uint8_t resp[36];
+        memset(resp, 0, sizeof(resp));
+        resp[0] = 0xC4; resp[1] = 0x09;  // temp=25.00°C
+        resp[2] = 60;                      // humidity=60%
+        resp[3] = 0;                       // code=clear
+        strcpy((char*)resp + 4, "Zhuzhou");
+        send_response(fd, 0x02, seq, resp, sizeof(resp));
+        ESP_LOGI(TAG, "GetWeather: 25°C 60%%");
+        break;
     }
 
-    cJSON_Delete(root);
+    case 0x03: // GetSingleImage — not yet implemented
+        send_error(fd, seq, cmd, 0x03); // resource unavailable
+        break;
+
+    case 0x04: { // CityInfo
+        uint8_t city[32] = {0};
+        strcpy((char*)city, "Zhuzhou");
+        send_response(fd, 0x04, seq, city, 32);
+        ESP_LOGI(TAG, "CityInfo: Zhuzhou");
+        break;
+    }
+
+    case 0x10: // StartCamera
+        send_response(fd, 0x10, seq, NULL, 0);
+        ESP_LOGI(TAG, "StartCamera (stub)");
+        break;
+
+    case 0x11: // StopCamera
+        send_response(fd, 0x11, seq, NULL, 0);
+        ESP_LOGI(TAG, "StopCamera (stub)");
+        break;
+
+    case 0x20: { // StreamStartUdp
+        if (plen >= 2) {
+            uint16_t android_port = payload[0] | (payload[1] << 8);
+            ESP_LOGI(TAG, "StreamStartUdp -> port %u", android_port);
+            uint8_t info[5];
+            info[0] = 640 & 0xFF; info[1] = (640 >> 8) & 0xFF;
+            info[2] = 480 & 0xFF; info[3] = (480 >> 8) & 0xFF;
+            info[4] = 12;
+            send_response(fd, 0x20, seq, info, 5);
+        }
+        break;
+    }
+
+    case 0x21: // StreamStopUdp
+        send_response(fd, 0x21, seq, NULL, 0);
+        ESP_LOGI(TAG, "StreamStopUdp");
+        break;
+
+    default:
+        ESP_LOGW(TAG, "Unknown cmd: 0x%02X", cmd);
+        send_error(fd, seq, cmd, 0x01);
+        break;
+    }
 }
 
 /* TCP Server 任务 */
@@ -98,24 +156,24 @@ static void tcp_server_task(void *arg)
     int opt = 1;
     setsockopt(s_server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    struct timeval timeout = {10, 0}; // recv 10秒超时
+    struct timeval timeout = {10, 0};
     setsockopt(s_server_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
     if (bind(s_server_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        ESP_LOGE(TAG, "Socket bind failed");
+        ESP_LOGE(TAG, "Bind failed");
         close(s_server_fd);
         vTaskDelete(NULL);
         return;
     }
 
     if (listen(s_server_fd, 1) < 0) {
-        ESP_LOGE(TAG, "Socket listen failed");
+        ESP_LOGE(TAG, "Listen failed");
         close(s_server_fd);
         vTaskDelete(NULL);
         return;
     }
 
-    ESP_LOGI(TAG, "TCP server listening on port %d", PORT);
+    ESP_LOGI(TAG, "Listening on port %d", PORT);
 
     while (1) {
         struct sockaddr_in client;
@@ -127,25 +185,13 @@ static void tcp_server_task(void *arg)
             continue;
         }
 
-        char buf[BUF_SIZE];
-        int len;
-
         ESP_LOGI(TAG, "Android connected");
+        uint8_t cmd, buf[512];
+        uint16_t seq;
+        uint32_t plen;
 
-        while ((len = read(s_client_fd, buf, sizeof(buf) - 1)) > 0) {
-            buf[len] = '\0';
-            /* 可能有多行 JSON */
-            char *line = buf;
-            char *nl;
-            while ((nl = strchr(line, '\n')) != NULL) {
-                *nl = '\0';
-                if (strlen(line) > 0) {
-                    process_message(line);
-                }
-                line = nl + 1;
-            }
-            /* 剩余不完整行留在 buffer 中（简化处理） */
-        }
+        while (read_packet(s_client_fd, &cmd, &seq, buf, &plen) == 0)
+            handle_packet(s_client_fd, cmd, seq, buf, plen);
 
         ESP_LOGI(TAG, "Android disconnected");
         close(s_client_fd);
@@ -156,6 +202,6 @@ static void tcp_server_task(void *arg)
 esp_err_t comms_server_init(void)
 {
     xTaskCreatePinnedToCore(tcp_server_task, "comms", 4096, NULL, 4, NULL, 1);
-    ESP_LOGI(TAG, "Comms server started");
+    ESP_LOGI(TAG, "Comms server started (binary protocol)");
     return ESP_OK;
 }
