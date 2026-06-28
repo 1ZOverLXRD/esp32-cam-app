@@ -35,18 +35,26 @@ ESP32 主菜单
 ```
 
 ### Stream to Android 模式
-1. 初始化 OV5640（QVGA 320×240, JPEG 输出）
-2. 启动 UDP 推流任务：
-   - 每帧：`esp_camera_fb_get()` → 按 UDP 分片协议发包
-   - 分片格式：`FRAME_ID(4) + TIMESTAMP(4) + FRAG_ID(2) + FRAG_TOTAL(2) + JPEG`
+1. 初始化 OV5640（QVGA 320×240, JPEG 输出, 帧率 15fps）
+2. 从 TCP 客户端 `accept()` 获取 Android IP
+3. 启动 UDP 推流任务（独立任务，栈 4096）：
+   - 每帧：`esp_camera_fb_get()` → JPEG 裸数据
+   - 按 UDP 分片协议发送：`FRAME_ID(4) + TIMESTAMP(4) + FRAG_ID(2) + FRAG_TOTAL(2) + JPEG 分片`
+   - 每个分片 ≤ 1400 字节，每帧约 25-35 个分片
    - Android 端 `UdpFrameReceiver` 接收拼帧
-3. TFT 显示 "Streaming..." 静态文字
-4. Android 收到帧后送入 TFLite 推理（Trash detection）
+4. TFT 显示 "Streaming..." 静态文字
+5. LEFT/RIGHT 无操作，LONG_PRESS 退出推流
+6. Android 收到帧后送入 TFLite 推理（Trash detection）
 
 ### Local TFT Display 模式
-1. 初始化 OV5640（QQVGA 160×120, RGB565 输出）
-2. 定时取帧 → 直接 DMA 到 LVGL `lv_img` → 显示实时画面
-3. 帧率约 5-10fps
+1. 初始化 OV5640（QVGA 320×240, JPEG 输出, 5fps）
+2. LVGL 定时器（100ms）取帧：
+   - `esp_camera_fb_get()` → 获取 JPEG 帧
+   - JPEG 解码为 RGB565 → 缩放到 240×240
+   - 直接写入 LVGL 全帧缓冲 `lv_disp_drv_t.draw_buf`
+   - `lv_disp_flush_ready()` 通知显示驱动刷新
+3. 帧率约 5-10fps（JPEG 解码是瓶颈）
+4. LEFT/RIGHT 无操作，LONG_PRESS 退出显示
 
 ### 退出
 LONG_PRESS → 关摄像头 → `esp_camera_deinit()` → 回到模式选择画面
