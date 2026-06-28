@@ -380,6 +380,18 @@ static void on_create(lv_obj_t *parent)
     s_focus_idx = FOCUS_STREAM;
     s_skip_press = false;
 
+    /* 确保 STA 网口的 DHCP 客户端在运行 */
+    for (esp_netif_t *n = esp_netif_next(NULL); n; n = esp_netif_next(n)) {
+        const char *key = esp_netif_get_ifkey(n);
+        if (!key || !strstr(key, "STA")) continue;
+        esp_netif_dhcp_status_t s;
+        if (esp_netif_dhcpc_get_status(n, &s) == ESP_OK && s == ESP_NETIF_DHCP_STOPPED) {
+            esp_netif_dhcpc_start(n);
+            ESP_LOGI(TAG, "DHCP client started on %s", key);
+        }
+        break;
+    }
+
     rebuild_mode_ui();
     ESP_LOGI(TAG, "Camera app created, STA IP: %s", get_sta_ip_str());
 }
