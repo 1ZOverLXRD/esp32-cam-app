@@ -35,7 +35,7 @@ ESP32 主菜单
 ```
 
 ### Stream to Android 模式
-1. 初始化 OV5640（HD 1280×720, JPEG 输出, 帧率 15fps）
+1. 初始化 OV5640（HD 1280×720, JPEG 输出）
 2. 从 TCP 客户端 `accept()` 获取 Android IP
 3. 启动 UDP 推流任务（独立任务，栈 4096）：
    - 每帧：`esp_camera_fb_get()` → JPEG 裸数据
