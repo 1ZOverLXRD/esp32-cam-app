@@ -196,7 +196,11 @@ static void enter_stream_mode(void)
     s_streaming = true;
     s_tft_mode  = false;
 
-    if (s_hint) lv_label_set_text(s_hint, "Streaming 720p...");
+    if (s_hint) {
+        char hint[64];
+        snprintf(hint, sizeof(hint), "Streaming 720p to STA: %s", s_sta_ip);
+        lv_label_set_text(s_hint, hint);
+    }
 
     s_udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (s_udp_fd < 0) {

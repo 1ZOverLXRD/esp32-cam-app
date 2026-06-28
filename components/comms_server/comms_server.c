@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <sys/time.h>
+#include "discovery.h"
 
 static const char *TAG = "COMMS";
 static int s_server_fd = -1;
@@ -221,6 +222,7 @@ static void tcp_server_task(void *arg)
 esp_err_t comms_server_init(void)
 {
     xTaskCreatePinnedToCore(tcp_server_task, "comms", 4096, NULL, 4, NULL, 1);
+    discovery_start();
     ESP_LOGI(TAG, "Comms server started (binary protocol)");
     return ESP_OK;
 }
