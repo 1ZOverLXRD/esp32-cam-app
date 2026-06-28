@@ -16,6 +16,7 @@ extern volatile bool s_app_handled;
 
 static lv_obj_t *s_page = NULL;
 static lv_obj_t *s_hint = NULL;
+static lv_obj_t *s_ip_label = NULL;  // 显示 STA IP
 static lv_obj_t *s_stream_btn = NULL;
 static lv_obj_t *s_tft_btn = NULL;
 
@@ -188,6 +189,9 @@ static void enter_stream_mode(void)
     if (s_stream_btn) { lv_obj_del(s_stream_btn); s_stream_btn = NULL; }
     if (s_tft_btn)   { lv_obj_del(s_tft_btn);   s_tft_btn   = NULL; }
 
+    /* 清除旧 IP 标签 */
+    if (s_ip_label) { lv_obj_del(s_ip_label); s_ip_label = NULL; }
+
     if (init_camera(FRAMESIZE_HD, PIXFORMAT_JPEG) != ESP_OK) {
         if (s_hint) lv_label_set_text(s_hint, "Camera init failed");
         return;
@@ -196,10 +200,17 @@ static void enter_stream_mode(void)
     s_streaming = true;
     s_tft_mode  = false;
 
-    if (s_hint) {
-        char hint[64];
-        snprintf(hint, sizeof(hint), "Streaming 720p to STA: %s", s_sta_ip);
-        lv_label_set_text(s_hint, hint);
+    if (s_hint) lv_label_set_text(s_hint, "Long PRESS exit");
+    if (s_ip_label) lv_label_set_text(s_ip_label, s_sta_ip);
+
+    /* 创建 IP 显示标签 */
+    if (!s_ip_label) {
+        s_ip_label = lv_label_create(s_page);
+        lv_label_set_text(s_ip_label, s_sta_ip);
+        lv_obj_set_style_text_color(s_ip_label, lv_color_make(100, 200, 255), LV_STATE_DEFAULT);
+        lv_obj_set_style_text_align(s_ip_label, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
+        lv_obj_set_width(s_ip_label, 220);
+        lv_obj_align(s_ip_label, LV_ALIGN_TOP_MID, 0, 16);
     }
 
     s_udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -334,45 +345,22 @@ static void on_joystick(joystick_evt_t evt)
 {
     if (!s_page) return;
 
-    s_app_handled = false;
-
-    /* 去抖：LONG_PRESS 退出后跳过首次 PRESS（摇杆回位触发） */
-    if (s_skip_press) {
-        if (evt == JOY_EVT_PRESS) {
-            s_skip_press = false;
-            ESP_LOGD(TAG, "skip rebound PRESS");
-            s_app_handled = true;
-            return;
-        }
-        /* 非 PRESS 事件清除去抖 */
-        if (evt != JOY_EVT_NONE) {
-            s_skip_press = false;
-        }
-    }
-
-    /* 推流 / TFT 模式下：LONG_PRESS 退出到模式选择 */
+    /* 推流 / TFT 模式下：不消费任何事件，退出由 ui_main 处理动画 */
     if (s_streaming || s_tft_mode) {
-        if (evt == JOY_EVT_LONG_PRESS) {
-            ESP_LOGI(TAG, "LONG_PRESS exit: streaming=%d tft=%d", s_streaming, s_tft_mode);
-            stop_camera();
-            rebuild_mode_ui();
-            s_skip_press = true;   // 开启去抖
-            s_app_handled = true;
-        }
         return;
     }
 
     /* ── 模式选择界面 ── */
     switch (evt) {
         case JOY_EVT_UP:
-            s_focus_idx = FOCUS_TFT;
-            update_focus_style();
-            ESP_LOGD(TAG, "focus -> TFT");
-            break;
-        case JOY_EVT_DOWN:
             s_focus_idx = FOCUS_STREAM;
             update_focus_style();
             ESP_LOGD(TAG, "focus -> Stream");
+            break;
+        case JOY_EVT_DOWN:
+            s_focus_idx = FOCUS_TFT;
+            update_focus_style();
+            ESP_LOGD(TAG, "focus -> TFT");
             break;
         case JOY_EVT_PRESS:
             if (s_focus_idx == FOCUS_STREAM) {
