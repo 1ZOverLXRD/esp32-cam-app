@@ -127,12 +127,16 @@ static void handle_packet(int fd, uint8_t cmd, uint16_t seq,
                 g_android_port = android_port;
                 ESP_LOGI(TAG, "StreamStartUdp -> %s:%u",
                          inet_ntoa(client.sin_addr), android_port);
+            } else {
+                ESP_LOGE(TAG, "StreamStartUdp getpeername failed: errno=%d", errno);
             }
             uint8_t info[5];
             info[0] = 640 & 0xFF; info[1] = (640 >> 8) & 0xFF;
             info[2] = 480 & 0xFF; info[3] = (480 >> 8) & 0xFF;
             info[4] = 12;
             send_response(fd, 0x20, seq, info, 5);
+        } else {
+            ESP_LOGW(TAG, "StreamStartUdp payload too short: %u", plen);
         }
         break;
     }
@@ -193,11 +197,14 @@ static void tcp_server_task(void *arg)
         s_client_fd = accept(s_server_fd, (struct sockaddr *)&client, &client_len);
 
         if (s_client_fd < 0) {
-            ESP_LOGE(TAG, "Accept failed");
+            int err = errno;
+            ESP_LOGE(TAG, "Accept failed: errno=%d (%s)", err, strerror(err));
+            vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
 
-        ESP_LOGI(TAG, "Android connected");
+        ESP_LOGI(TAG, "Android connected: %s:%u",
+                 inet_ntoa(client.sin_addr), ntohs(client.sin_port));
         uint8_t cmd, buf[512];
         uint16_t seq;
         uint32_t plen;
