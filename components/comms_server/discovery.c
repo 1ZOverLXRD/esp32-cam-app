@@ -61,7 +61,7 @@ static void discovery_task(void *arg)
             char ip_str[16] = "0.0.0.0";
             for (esp_netif_t *ni = esp_netif_next(NULL); ni; ni = esp_netif_next(ni)) {
                 const char *key = esp_netif_get_ifkey(ni);
-                if (key && strstr(key, "ap")) continue;  // 跳过 AP
+                if (key && strstr(key, "AP")) continue;  // 跳过 AP
                 esp_netif_ip_info_t ip_info;
                 if (esp_netif_get_ip_info(ni, &ip_info) == ESP_OK && ip_info.ip.addr != 0) {
                     snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ip_info.ip));

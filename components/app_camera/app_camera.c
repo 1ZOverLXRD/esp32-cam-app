@@ -27,11 +27,11 @@ static const char *get_sta_ip_str(void)
     static char buf[16] = "0.0.0.0";
     esp_netif_t *sta = NULL;
     esp_netif_t *ap  = NULL;
-    /* 先分类网口 */
+    /* 先分类网口（if_key 全大写：WIFI_STA_DEF / WIFI_AP_DEF） */
     for (esp_netif_t *n = esp_netif_next(NULL); n; n = esp_netif_next(n)) {
         const char *key = esp_netif_get_ifkey(n);
-        if (key && strstr(key, "sta"))  sta = n;
-        if (key && strstr(key, "ap"))   ap  = n;
+        if (key && strstr(key, "STA"))  sta = n;
+        if (key && strstr(key, "AP"))   ap  = n;
     }
     /* 优先返回 STA IP */
     if (sta) {
