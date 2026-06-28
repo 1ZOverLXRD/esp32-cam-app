@@ -15,8 +15,7 @@ static const char *TAG = "APP_CAMERA";
 extern volatile bool s_app_handled;
 
 static lv_obj_t *s_page = NULL;
-static lv_obj_t *s_hint = NULL;
-static lv_obj_t *s_ip_label = NULL;  // 显示 STA IP
+static lv_obj_t *s_hint = NULL; static lv_obj_t *s_ip_label = NULL;
 static lv_obj_t *s_stream_btn = NULL;
 static lv_obj_t *s_tft_btn = NULL;
 
