@@ -16,6 +16,9 @@ lv_disp_t *ui_lvgl_get_display(void);
 void ui_lvgl_lock(void);
 void ui_lvgl_unlock(void);
 
+/* PSRAM 帧缓冲（TFT 显示用，由 app_camera 共享访问）*/
+extern lv_color_t *s_buf1;
+
 #ifdef __cplusplus
 }
 #endif

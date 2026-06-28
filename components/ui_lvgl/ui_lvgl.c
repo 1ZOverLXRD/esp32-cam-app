@@ -23,7 +23,7 @@ void ui_lvgl_unlock(void)
 }
 
 /* 缓冲行数：双缓冲 20 行刚好占满 DMA 池 */
-static lv_color_t *s_buf1 = NULL;
+lv_color_t *s_buf1 = NULL;
 
 static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_p)
 {

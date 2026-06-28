@@ -1,5 +1,6 @@
 #include "app_camera.h"
 #include "ui_main.h"
+#include "ui_lvgl.h"
 #include "esp_log.h"
 #include "esp_camera.h"
 #include "esp_timer.h"
@@ -11,8 +12,7 @@
 
 static const char *TAG = "APP_CAMERA";
 
-extern volatile bool s_app_handled;   // ui_main 全局，防止 LONG_PRESS 退出
-extern lv_color_t *s_buf1;           // LVGL PSRAM 缓冲（240×240 RG565）
+extern volatile bool s_app_handled;
 
 static lv_obj_t *s_page = NULL;
 static lv_obj_t *s_hint = NULL;
@@ -29,7 +29,34 @@ static uint16_t s_android_port = 0;
 static TaskHandle_t s_stream_task = NULL;
 static uint32_t s_frame_id = 0;
 
-/* OV5640 初始化 */
+/* 焦点与去抖 */
+static int s_focus_idx = 0;          // 0=stream, 1=tft
+static bool s_skip_press = false;     // LONG_PRESS 退出后跳过首次 PRESS
+
+#define FOCUS_STREAM 0
+#define FOCUS_TFT    1
+
+/* ===================== 焦点样式 ===================== */
+
+static void update_focus_style(void)
+{
+    lv_color_t stream_bg = (s_focus_idx == FOCUS_STREAM) ? lv_color_make(80, 80, 180) : lv_color_make(50, 50, 120);
+    lv_color_t tft_bg    = (s_focus_idx == FOCUS_TFT)    ? lv_color_make(50, 50, 100) : lv_color_make(30, 30, 55);
+
+    if (s_stream_btn) {
+        lv_obj_set_style_bg_color(s_stream_btn, stream_bg, LV_STATE_DEFAULT);
+        lv_obj_set_style_border_width(s_stream_btn, (s_focus_idx == FOCUS_STREAM) ? 3 : 0, LV_STATE_DEFAULT);
+        lv_obj_set_style_border_color(s_stream_btn, lv_color_white(), LV_STATE_DEFAULT);
+    }
+    if (s_tft_btn) {
+        lv_obj_set_style_bg_color(s_tft_btn, tft_bg, LV_STATE_DEFAULT);
+        lv_obj_set_style_border_width(s_tft_btn, (s_focus_idx == FOCUS_TFT) ? 3 : 0, LV_STATE_DEFAULT);
+        lv_obj_set_style_border_color(s_tft_btn, lv_color_white(), LV_STATE_DEFAULT);
+    }
+}
+
+/* ===================== 摄像头初始化 ===================== */
+
 static esp_err_t init_camera(framesize_t size, pixformat_t fmt)
 {
     camera_config_t cfg = {
@@ -59,17 +86,26 @@ static esp_err_t init_camera(framesize_t size, pixformat_t fmt)
         .fb_location = CAMERA_FB_IN_PSRAM,
         .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
     };
-    return esp_camera_init(&cfg);
+    esp_err_t ret = esp_camera_init(&cfg);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Camera init OK: size=%dx%d fmt=%d",
+                 (size == FRAMESIZE_HD) ? 1280 : 320,
+                 (size == FRAMESIZE_HD) ? 720  : 240,
+                 fmt);
+    } else {
+        ESP_LOGE(TAG, "Camera init FAILED: %d", ret);
+    }
+    return ret;
 }
 
-/* ── TFT 模式定时器回调 ── */
+/* ===================== TFT 模式定时器回调 ===================== */
+
 static void cam_timer_cb(lv_timer_t *t)
 {
     (void)t;
     camera_fb_t *fb = esp_camera_fb_get();
     if (!fb) return;
 
-    /* QVGA 320×240 RGB565 → 居中裁剪为 240×240 → memcpy 到 PSRAM 缓冲 */
     if (s_buf1 && fb->len >= 320 * 240 * 2) {
         for (int y = 0; y < 240; y++) {
             memcpy((uint8_t *)s_buf1 + y * 240 * 2,
@@ -80,15 +116,24 @@ static void cam_timer_cb(lv_timer_t *t)
     esp_camera_fb_return(fb);
 }
 
-/* ── UDP 推流任务 ── */
+/* ===================== UDP 推流任务 ===================== */
+
 static void stream_task(void *arg)
 {
     (void)arg;
     uint8_t pkt[1500];
+    bool first_frame = true;
 
     while (1) {
         camera_fb_t *fb = esp_camera_fb_get();
         if (!fb) { vTaskDelay(1); continue; }
+
+        if (first_frame) {
+            ESP_LOGI(TAG, "First frame sent: %dx%d, %d bytes, frag=%d",
+                     fb->width, fb->height, fb->len,
+                     (int)((fb->len + 1388 - 1) / 1388));
+            first_frame = false;
+        }
 
         uint8_t *jpeg = fb->buf;
         size_t jpeg_len = fb->len;
@@ -102,7 +147,6 @@ static void stream_task(void *arg)
             size_t chunk = jpeg_len - offset;
             if (chunk > 1388) chunk = 1388;
 
-            /* 12 字节头 */
             pkt[0]  = s_frame_id & 0xFF;
             pkt[1]  = (s_frame_id >> 8) & 0xFF;
             pkt[2]  = (s_frame_id >> 16) & 0xFF;
@@ -134,14 +178,17 @@ static void stream_task(void *arg)
     }
 }
 
-/* ── 进入推流模式 ── */
+/* ===================== 进入推流 / TFT 模式 ===================== */
+
 static void enter_stream_mode(void)
 {
+    ESP_LOGI(TAG, "enter_stream_mode: ip=%s port=%u",
+             inet_ntoa(*((struct in_addr *)&s_android_ip)), s_android_port);
+
     if (s_stream_btn) { lv_obj_del(s_stream_btn); s_stream_btn = NULL; }
     if (s_tft_btn)   { lv_obj_del(s_tft_btn);   s_tft_btn   = NULL; }
 
     if (init_camera(FRAMESIZE_HD, PIXFORMAT_JPEG) != ESP_OK) {
-        ESP_LOGE(TAG, "Camera init failed");
         if (s_hint) lv_label_set_text(s_hint, "Camera init failed");
         return;
     }
@@ -151,7 +198,6 @@ static void enter_stream_mode(void)
 
     if (s_hint) lv_label_set_text(s_hint, "Streaming 720p...");
 
-    /* 打开 UDP 套接字 */
     s_udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (s_udp_fd < 0) {
         ESP_LOGE(TAG, "UDP socket failed");
@@ -159,19 +205,18 @@ static void enter_stream_mode(void)
         return;
     }
 
-    /* 启动推流任务 */
     xTaskCreate(stream_task, "cam_stream", 4096, NULL, 4, &s_stream_task);
-    ESP_LOGI(TAG, "Stream task started");
+    ESP_LOGI(TAG, "Stream task started, frame_id=%u", s_frame_id);
 }
 
-/* ── 进入 TFT 显示模式 ── */
 static void enter_tft_mode(void)
 {
+    ESP_LOGI(TAG, "enter_tft_mode");
+
     if (s_stream_btn) { lv_obj_del(s_stream_btn); s_stream_btn = NULL; }
     if (s_tft_btn)   { lv_obj_del(s_tft_btn);   s_tft_btn   = NULL; }
 
     if (init_camera(FRAMESIZE_QVGA, PIXFORMAT_RGB565) != ESP_OK) {
-        ESP_LOGE(TAG, "Camera init failed");
         if (s_hint) lv_label_set_text(s_hint, "Camera init failed");
         return;
     }
@@ -184,9 +229,12 @@ static void enter_tft_mode(void)
     ESP_LOGI(TAG, "TFT mode started");
 }
 
-/* ── 停止摄像头 ── */
+/* ===================== 停止摄像头 ===================== */
+
 static void stop_camera(void)
 {
+    ESP_LOGI(TAG, "stop_camera: streaming=%d tft=%d", s_streaming, s_tft_mode);
+
     if (s_cam_timer)  { lv_timer_del(s_cam_timer);  s_cam_timer  = NULL; }
     if (s_stream_task) { vTaskDelete(s_stream_task); s_stream_task = NULL; }
     if (s_udp_fd >= 0) { close(s_udp_fd); s_udp_fd = -1; }
@@ -197,13 +245,14 @@ static void stop_camera(void)
     ESP_LOGI(TAG, "Camera stopped");
 }
 
-/* ── 重建模式选择 UI ── */
+/* ===================== 重建模式选择 UI ===================== */
+
 static void rebuild_mode_ui(void)
 {
-    /* 清掉残余对象 */
     lv_obj_clean(s_page);
+    s_stream_btn = s_tft_btn = NULL;
+    s_focus_idx = FOCUS_STREAM;
 
-    /* 标题 */
     lv_obj_t *title = lv_label_create(s_page);
     lv_label_set_text(title, "Camera");
     lv_obj_set_style_text_color(title, lv_color_white(), LV_STATE_DEFAULT);
@@ -213,7 +262,9 @@ static void rebuild_mode_ui(void)
     s_stream_btn = lv_obj_create(s_page);
     lv_obj_set_size(s_stream_btn, 200, 50);
     lv_obj_set_style_radius(s_stream_btn, 8, LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(s_stream_btn, lv_color_make(60, 60, 140), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(s_stream_btn, lv_color_make(80, 80, 180), LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(s_stream_btn, 3, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_color(s_stream_btn, lv_color_white(), LV_STATE_DEFAULT);
     lv_obj_align(s_stream_btn, LV_ALIGN_CENTER, 0, -40);
     lv_obj_clear_flag(s_stream_btn, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_t *slbl = lv_label_create(s_stream_btn);
@@ -224,21 +275,20 @@ static void rebuild_mode_ui(void)
     s_tft_btn = lv_obj_create(s_page);
     lv_obj_set_size(s_tft_btn, 200, 50);
     lv_obj_set_style_radius(s_tft_btn, 8, LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(s_tft_btn, lv_color_make(35, 35, 60), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(s_tft_btn, lv_color_make(30, 30, 55), LV_STATE_DEFAULT);
     lv_obj_align(s_tft_btn, LV_ALIGN_CENTER, 0, 30);
     lv_obj_clear_flag(s_tft_btn, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_t *tlbl = lv_label_create(s_tft_btn);
     lv_label_set_text(tlbl, "Local TFT Display");
     lv_obj_center(tlbl);
 
-    /* 提示 */
     s_hint = lv_label_create(s_page);
-    lv_label_set_text(s_hint, "PRESS to select mode");
+    lv_label_set_text(s_hint, "UP/DOWN select  PRESS confirm");
     lv_obj_set_style_text_color(s_hint, lv_color_make(150, 150, 180), LV_STATE_DEFAULT);
     lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -16);
 }
 
-/* ── APP 生命周期 ── */
+/* ===================== APP 生命周期 ===================== */
 
 static void on_create(lv_obj_t *parent)
 {
@@ -253,6 +303,8 @@ static void on_create(lv_obj_t *parent)
     s_cam_timer = NULL;
     s_stream_btn = s_tft_btn = NULL;
     s_frame_id = 0;
+    s_focus_idx = FOCUS_STREAM;
+    s_skip_press = false;
 
     rebuild_mode_ui();
     ESP_LOGI(TAG, "Camera app created");
@@ -272,22 +324,57 @@ static void on_joystick(joystick_evt_t evt)
 {
     if (!s_page) return;
 
-    /* 重置消费标志，让 ui_main 能检测 */
     s_app_handled = false;
+
+    /* 去抖：LONG_PRESS 退出后跳过首次 PRESS（摇杆回位触发） */
+    if (s_skip_press) {
+        if (evt == JOY_EVT_PRESS) {
+            s_skip_press = false;
+            ESP_LOGD(TAG, "skip rebound PRESS");
+            s_app_handled = true;
+            return;
+        }
+        /* 非 PRESS 事件清除去抖 */
+        if (evt != JOY_EVT_NONE) {
+            s_skip_press = false;
+        }
+    }
 
     /* 推流 / TFT 模式下：LONG_PRESS 退出到模式选择 */
     if (s_streaming || s_tft_mode) {
         if (evt == JOY_EVT_LONG_PRESS) {
+            ESP_LOGI(TAG, "LONG_PRESS exit: streaming=%d tft=%d", s_streaming, s_tft_mode);
             stop_camera();
             rebuild_mode_ui();
-            s_app_handled = true;  // 消费事件，阻止 ui_main 的退出动画
+            s_skip_press = true;   // 开启去抖
+            s_app_handled = true;
         }
         return;
     }
 
-    /* 模式选择：PRESS → 推流（暂固定，后续加焦点） */
-    if (evt == JOY_EVT_PRESS) {
-        enter_stream_mode();
+    /* ── 模式选择界面 ── */
+    switch (evt) {
+        case JOY_EVT_UP:
+            s_focus_idx = FOCUS_STREAM;
+            update_focus_style();
+            ESP_LOGD(TAG, "focus -> Stream");
+            break;
+        case JOY_EVT_DOWN:
+            s_focus_idx = FOCUS_TFT;
+            update_focus_style();
+            ESP_LOGD(TAG, "focus -> TFT");
+            break;
+        case JOY_EVT_PRESS:
+            if (s_focus_idx == FOCUS_STREAM) {
+                ESP_LOGI(TAG, "Selected: Stream mode");
+                enter_stream_mode();
+            } else {
+                ESP_LOGI(TAG, "Selected: TFT mode");
+                enter_tft_mode();
+            }
+            break;
+        default:
+            break;
     }
 }
 
