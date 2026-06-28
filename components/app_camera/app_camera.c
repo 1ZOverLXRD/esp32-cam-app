@@ -22,13 +22,17 @@ static lv_obj_t *s_tft_btn = NULL;
 
 #include "esp_netif.h"
 
-/* 遍历所有网口找第一个有 IP 的（不依赖 if_key，兼容 web_config 等任何初始化路径） */
+/* 只返回 STA/ETH 接口的 IP，跳过 AP（DHCP 服务器模式）避免残留 192.168.4.1 */
 static const char *get_sta_ip_str(void)
 {
     static char buf[16] = "0.0.0.0";
     for (esp_netif_t *n = esp_netif_next(NULL); n; n = esp_netif_next(n)) {
+        /* 跳过运行 DHCP 服务器的网口（AP 模式） */
+        esp_netif_dhcp_status_t s;
+        if (esp_netif_dhcps_get_status(n, &s) == ESP_OK && s == ESP_NETIF_DHCP_STARTED)
+            continue;
         esp_netif_ip_info_t ip;
-        if (esp_netif_get_ip_info(n, &ip) == ESP_OK && ip.ip.addr != 0) {
+        if (esp_netif_get_ip_info(n, &ip) == ESP_OK) {
             snprintf(buf, sizeof(buf), IPSTR, IP2STR(&ip.ip));
             break;
         }
@@ -36,7 +40,17 @@ static const char *get_sta_ip_str(void)
     return buf;
 }
 
+/* 每 2 秒刷新 IP 标签（STA 连接后自动更新） */
+static void ip_refresh_cb(lv_timer_t *t)
+{
+    (void)t;
+    if (s_ip_label) {
+        lv_label_set_text(s_ip_label, get_sta_ip_str());
+    }
+}
+
 static lv_timer_t *s_cam_timer = NULL;
+static lv_timer_t *s_ip_refresh_timer = NULL;
 static bool s_streaming = false;
 static bool s_tft_mode = false;
 
@@ -236,6 +250,9 @@ static void enter_stream_mode(void)
     lv_obj_align(s_ip_label, LV_ALIGN_TOP_MID, 0, 4);
     ESP_LOGI(TAG, "STA IP: %s", get_sta_ip_str());
 
+    /* 每 2 秒刷新 IP（STA 连上热点获 DHCP IP 后自动更新） */
+    s_ip_refresh_timer = lv_timer_create(ip_refresh_cb, 2000, NULL);
+
     s_udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (s_udp_fd < 0) {
         ESP_LOGE(TAG, "UDP socket failed");
@@ -274,6 +291,7 @@ static void stop_camera(void)
     ESP_LOGI(TAG, "stop_camera: streaming=%d tft=%d", s_streaming, s_tft_mode);
 
     if (s_cam_timer)  { lv_timer_del(s_cam_timer);  s_cam_timer  = NULL; }
+    if (s_ip_refresh_timer) { lv_timer_del(s_ip_refresh_timer); s_ip_refresh_timer = NULL; }
     if (s_stream_task) { vTaskDelete(s_stream_task); s_stream_task = NULL; }
     if (s_udp_fd >= 0) { close(s_udp_fd); s_udp_fd = -1; }
     esp_camera_deinit();
