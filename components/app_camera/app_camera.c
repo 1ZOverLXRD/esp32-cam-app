@@ -20,6 +20,22 @@ static lv_obj_t *s_ip_label = NULL;  // 显示 STA IP
 static lv_obj_t *s_stream_btn = NULL;
 static lv_obj_t *s_tft_btn = NULL;
 
+#include "esp_netif.h"
+
+/* 直接从网络接口获取 STA IP（不依赖事件回调） */
+static const char *get_sta_ip_str(void)
+{
+    static char buf[16] = "0.0.0.0";
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("STA_DEF");
+    if (netif) {
+        esp_netif_ip_info_t ip;
+        if (esp_netif_get_ip_info(netif, &ip) == ESP_OK) {
+            snprintf(buf, sizeof(buf), IPSTR, IP2STR(&ip.ip));
+        }
+    }
+    return buf;
+}
+
 static lv_timer_t *s_cam_timer = NULL;
 static bool s_streaming = false;
 static bool s_tft_mode = false;
@@ -189,9 +205,6 @@ static void enter_stream_mode(void)
     if (s_stream_btn) { lv_obj_del(s_stream_btn); s_stream_btn = NULL; }
     if (s_tft_btn)   { lv_obj_del(s_tft_btn);   s_tft_btn   = NULL; }
 
-    /* 清除旧 IP 标签 */
-    if (s_ip_label) { lv_obj_del(s_ip_label); s_ip_label = NULL; }
-
     if (init_camera(FRAMESIZE_HD, PIXFORMAT_JPEG) != ESP_OK) {
         if (s_hint) lv_label_set_text(s_hint, "Camera init failed");
         return;
@@ -201,17 +214,16 @@ static void enter_stream_mode(void)
     s_tft_mode  = false;
 
     if (s_hint) lv_label_set_text(s_hint, "Long PRESS exit");
-    if (s_ip_label) lv_label_set_text(s_ip_label, s_sta_ip);
 
-    /* 创建 IP 显示标签 */
-    if (!s_ip_label) {
-        s_ip_label = lv_label_create(s_page);
-        lv_label_set_text(s_ip_label, s_sta_ip);
-        lv_obj_set_style_text_color(s_ip_label, lv_color_make(100, 200, 255), LV_STATE_DEFAULT);
-        lv_obj_set_style_text_align(s_ip_label, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
-        lv_obj_set_width(s_ip_label, 220);
-        lv_obj_align(s_ip_label, LV_ALIGN_TOP_MID, 0, 16);
-    }
+    /* 创建/更新 IP 显示标签 */
+    if (s_ip_label) { lv_obj_del(s_ip_label); s_ip_label = NULL; }
+    s_ip_label = lv_label_create(s_page);
+    lv_label_set_text(s_ip_label, get_sta_ip_str());
+    lv_obj_set_style_text_color(s_ip_label, lv_color_make(100, 200, 255), LV_STATE_DEFAULT);
+    lv_obj_set_style_text_align(s_ip_label, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
+    lv_obj_set_width(s_ip_label, 220);
+    lv_obj_align(s_ip_label, LV_ALIGN_TOP_MID, 0, 16);
+    ESP_LOGI(TAG, "STA IP: %s", get_sta_ip_str());
 
     s_udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (s_udp_fd < 0) {
@@ -308,8 +320,7 @@ static void rebuild_mode_ui(void)
 
 /* ===================== APP 生命周期 ===================== */
 
-/* Wifi STA IP（由 web_config_server 切换 STA 时设置）*/
-extern char s_sta_ip[16];
+
 
 static void on_create(lv_obj_t *parent)
 {
@@ -328,7 +339,7 @@ static void on_create(lv_obj_t *parent)
     s_skip_press = false;
 
     rebuild_mode_ui();
-    ESP_LOGI(TAG, "Camera app created, STA IP: %s", s_sta_ip);
+    ESP_LOGI(TAG, "Camera app created, STA IP: %s", get_sta_ip_str());
 }
 
 static void on_destroy(void)
@@ -353,14 +364,14 @@ static void on_joystick(joystick_evt_t evt)
     /* ── 模式选择界面 ── */
     switch (evt) {
         case JOY_EVT_UP:
-            s_focus_idx = FOCUS_STREAM;
-            update_focus_style();
-            ESP_LOGD(TAG, "focus -> Stream");
-            break;
-        case JOY_EVT_DOWN:
             s_focus_idx = FOCUS_TFT;
             update_focus_style();
             ESP_LOGD(TAG, "focus -> TFT");
+            break;
+        case JOY_EVT_DOWN:
+            s_focus_idx = FOCUS_STREAM;
+            update_focus_style();
+            ESP_LOGD(TAG, "focus -> Stream");
             break;
         case JOY_EVT_PRESS:
             if (s_focus_idx == FOCUS_STREAM) {

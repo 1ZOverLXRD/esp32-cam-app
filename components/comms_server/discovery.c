@@ -6,6 +6,7 @@
  */
 
 #include "esp_log.h"
+#include "esp_netif.h"
 #include "lwip/sockets.h"
 #include "lwip/inet.h"
 #include "lwip/netdb.h"
@@ -15,7 +16,7 @@
 
 static const char *TAG = "DISCOVERY";
 
-extern char s_sta_ip[16];  // from ui_main.h
+
 
 static void discovery_task(void *arg)
 {
@@ -56,11 +57,18 @@ static void discovery_task(void *arg)
 
         if (n >= 6 && memcmp(buf, "ESP32?", 6) == 0) {
             char resp[32];
-            int rlen = snprintf(resp, sizeof(resp), "ESP32:%s", s_sta_ip);
+            esp_netif_t *netif = esp_netif_get_handle_from_ifkey("STA_DEF");
+            char ip_str[16] = "0.0.0.0";
+            if (netif) {
+                esp_netif_ip_info_t ip_info;
+                if (esp_netif_get_ip_info(netif, &ip_info) == ESP_OK)
+                    snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ip_info.ip));
+            }
+            int rlen = snprintf(resp, sizeof(resp), "ESP32:%s", ip_str);
             sendto(fd, resp, rlen, 0,
                    (struct sockaddr *)&from, fromlen);
             ESP_LOGI(TAG, "Discovery from %s -> responded: %s",
-                     inet_ntoa(from.sin_addr), s_sta_ip);
+                     inet_ntoa(from.sin_addr), ip_str);
         }
     }
 }
