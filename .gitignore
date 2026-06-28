@@ -20,3 +20,5 @@ Thumbs.db
 __pycache__/
 *.pyc
 managed_components/
+components/esp32-camera/
+managed_components/
