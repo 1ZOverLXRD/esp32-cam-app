@@ -16,7 +16,7 @@ ESP32 主菜单
 
 | 组件 | 来源 | 职责 |
 |------|------|------|
-| `esp32-camera` | ESP Registry managed component | OV5640 驱动：初始化、配置、取 JPEG 帧 |
+| `esp32-camera` | ESP Registry managed component | OV5640 驱动：初始化、配置、RGB565/JPEG 取帧 |
 | `app_camera` | 新建 | Camera APP 入口、模式选择、TFT 显示/推流控制 |
 
 ## Camera APP 行为
@@ -26,11 +26,11 @@ ESP32 主菜单
 ```
 ┌──────────────────────┐
 │                      │
-│  📡 Stream to Android│  ← PRESS 选择
+│  Stream to Android   │  ← PRESS 选择
 │                      │
-│  🖥️  Local TFT Display│  ← PRESS 选择
+│  Local TFT Display   │  ← PRESS 选择
 │                      │
-│  按 ← 返回主菜单     │
+│  LONG_PRESS 返回菜单  │
 └──────────────────────┘
 ```
 
@@ -40,7 +40,7 @@ ESP32 主菜单
 3. 启动 UDP 推流任务（独立任务，栈 4096）：
    - 每帧：`esp_camera_fb_get()` → JPEG 裸数据
    - 按 UDP 分片协议发送：`FRAME_ID(4) + TIMESTAMP(4) + FRAG_ID(2) + FRAG_TOTAL(2) + JPEG 分片`
-   - 每个分片 ≤ 1400 字节，每帧约 25-35 个分片
+   - 每个分片 ≤ 1400 字节，每帧约 8-12 个分片
    - Android 端 `UdpFrameReceiver` 接收拼帧
 4. TFT 显示 "Streaming..." 静态文字
 5. LEFT/RIGHT 无操作，LONG_PRESS 退出推流
@@ -49,10 +49,10 @@ ESP32 主菜单
 ### Local TFT Display 模式
 1. 初始化 OV5640（QVGA 320×240, RGB565 输出）
 2. LVGL 定时器取帧：
-   - `esp_camera_fb_get()` → 获取 RGB565 帧（147KB）
-   - 裁剪/缩放从 320×240 到 240×240（或者直接居中裁剪）
-   - `memcpy` 写入 LVGL 全帧缓冲 `disp_drv.draw_buf`
-   - `lv_disp_flush_ready()` 通知显示驱动刷新
+   - `esp_camera_fb_get()` → 获取 RGB565 帧 320×240
+   - 居中裁剪为 240×240（水平方向各去 40px）
+   - `memcpy` 到 LVGL 全帧缓冲 `s_buf1`（115200 字节）
+   - LVGL 下一周期自动 SPI flush 到屏幕
 3. 无 CPU JPEG 解码，纯内存拷贝 + SPI DMA，帧率取决于 OV5640 输出速度和 SPI 带宽
 
 ### 退出
