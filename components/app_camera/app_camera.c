@@ -22,15 +22,15 @@ static lv_obj_t *s_tft_btn = NULL;
 
 #include "esp_netif.h"
 
-/* 直接从网络接口获取 STA IP（不依赖事件回调） */
+/* 遍历所有网口找第一个有 IP 的（不依赖 if_key，兼容 web_config 等任何初始化路径） */
 static const char *get_sta_ip_str(void)
 {
     static char buf[16] = "0.0.0.0";
-    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("STA_DEF");
-    if (netif) {
+    for (esp_netif_t *n = esp_netif_next(NULL); n; n = esp_netif_next(n)) {
         esp_netif_ip_info_t ip;
-        if (esp_netif_get_ip_info(netif, &ip) == ESP_OK) {
+        if (esp_netif_get_ip_info(n, &ip) == ESP_OK && ip.ip.addr != 0) {
             snprintf(buf, sizeof(buf), IPSTR, IP2STR(&ip.ip));
+            break;
         }
     }
     return buf;
@@ -202,27 +202,38 @@ static void enter_stream_mode(void)
     ESP_LOGI(TAG, "enter_stream_mode: ip=%s port=%u",
              inet_ntoa(*((struct in_addr *)&s_android_ip)), s_android_port);
 
-    if (s_stream_btn) { lv_obj_del(s_stream_btn); s_stream_btn = NULL; }
-    if (s_tft_btn)   { lv_obj_del(s_tft_btn);   s_tft_btn   = NULL; }
+    /* 清空选择界面（含 Camera 标题），避免重叠 */
+    lv_obj_clean(s_page);
+    s_hint = NULL;
+    s_stream_btn = s_tft_btn = NULL;
 
     if (init_camera(FRAMESIZE_HD, PIXFORMAT_JPEG) != ESP_OK) {
-        if (s_hint) lv_label_set_text(s_hint, "Camera init failed");
+        s_hint = lv_label_create(s_page);
+        lv_label_set_text(s_hint, "Camera init failed");
+        lv_obj_set_style_text_color(s_hint, lv_color_make(255, 80, 80), LV_STATE_DEFAULT);
+        lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -16);
+        ESP_LOGE(TAG, "Camera init failed");
         return;
     }
 
     s_streaming = true;
     s_tft_mode  = false;
 
-    if (s_hint) lv_label_set_text(s_hint, "Long PRESS exit");
+    /* 创建底部提示 */
+    s_hint = lv_label_create(s_page);
+    lv_label_set_text(s_hint, "Long PRESS exit");
+    lv_obj_set_style_text_color(s_hint, lv_color_white(), LV_STATE_DEFAULT);
+    lv_obj_set_style_text_align(s_hint, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
+    lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -16);
 
-    /* 创建/更新 IP 显示标签 */
+    /* 创建 IP 标签（顶部居中，y=0 无标题遮挡） */
     if (s_ip_label) { lv_obj_del(s_ip_label); s_ip_label = NULL; }
     s_ip_label = lv_label_create(s_page);
     lv_label_set_text(s_ip_label, get_sta_ip_str());
     lv_obj_set_style_text_color(s_ip_label, lv_color_make(100, 200, 255), LV_STATE_DEFAULT);
     lv_obj_set_style_text_align(s_ip_label, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
     lv_obj_set_width(s_ip_label, 220);
-    lv_obj_align(s_ip_label, LV_ALIGN_TOP_MID, 0, 16);
+    lv_obj_align(s_ip_label, LV_ALIGN_TOP_MID, 0, 4);
     ESP_LOGI(TAG, "STA IP: %s", get_sta_ip_str());
 
     s_udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
