@@ -10,6 +10,7 @@
 #include "lwip/inet.h"
 #include "lwip/netdb.h"
 #include "comms_server.h"
+#include "cam_config.h"
 
 static const char *TAG = "APP_CAMERA";
 
@@ -258,6 +259,29 @@ static void health_check_cb(lv_timer_t *t)
     rebuild_mode_ui();
 }
 
+/* 应用 NVS Camera 参数到传感器 */
+static void apply_cam_config(void)
+{
+    cam_config_t cfg;
+    cam_config_load(&cfg);
+    sensor_t *s = esp_camera_sensor_get();
+    if (!s) {
+        ESP_LOGW(TAG, "sensor_get failed, cannot apply config");
+        return;
+    }
+
+    s->set_framesize(s, cfg.resolution);
+    s->set_quality(s, cfg.quality);
+    s->set_hmirror(s, cfg.mirror);
+    s->set_vflip(s, cfg.flip);
+    s->set_brightness(s, cfg.brightness);
+    s->set_contrast(s, cfg.contrast);
+    s->set_wb_mode(s, cfg.wb_mode);
+    s->set_ae_level(s, cfg.ae_level);
+    ESP_LOGI(TAG, "Sensor config applied: res=%u qual=%u mir=%u flip=%u",
+             cfg.resolution, cfg.quality, cfg.mirror, cfg.flip);
+}
+
 /* 等Android连上 + 收到UDP端口后再真正开摄像头+推流 */
 static void try_start_stream(lv_timer_t *t)
 {
@@ -275,6 +299,7 @@ static void try_start_stream(lv_timer_t *t)
         ESP_LOGE(TAG, "Camera init failed");
         return;
     }
+    apply_cam_config();
 
     s_streaming = true;
     s_tft_mode  = false;
@@ -336,6 +361,7 @@ static void enter_tft_mode(void)
         if (s_hint) lv_label_set_text(s_hint, "Camera init failed");
         return;
     }
+    apply_cam_config();
 
     s_streaming = false;
     s_tft_mode  = true;

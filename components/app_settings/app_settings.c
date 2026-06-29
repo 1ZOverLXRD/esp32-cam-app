@@ -1,6 +1,7 @@
 #include "app_t.h"
 #include "ui_main.h"
 #include "esp_log.h"
+#include "cam_config.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -26,7 +27,7 @@ typedef struct {
     lv_obj_t *hdr_label;
     lv_obj_t *indicator;
     lv_obj_t *cursor;
-    lv_obj_t *sub_items[6];
+    lv_obj_t *sub_items[8];
     int sub_count;
     int expanded;
 } section_t;
@@ -43,7 +44,13 @@ static const char *HEADER_NAMES[SECTION_COUNT] = {
 };
 
 /* 各段子项 */
-static const char *CAMERA_ITEMS[] = {"Resolution: 720p", "Frame Rate: 25fps", "Flip: Off"};
+#define CAM_CFG_COUNT 8
+static const char *CAM_CFG_NAMES[CAM_CFG_COUNT] = {
+    "Res", "Qual", "Mirror", "Flip",
+    "Bright", "Contrast", "WB", "AE Lv"
+};
+static cam_config_t s_cam_cfg;
+static int s_editing = -1;  // -1=不在编辑, >=0=编辑中的索引
 /* WiFi Info 段：断开 vs 连接 */
 static const char *WIFI_ITEMS_DISCONNECTED[] = {"Status:  AP Mode / 192.168.4.1",
                                                  "SSID:    COLDFISHESP32",
@@ -51,11 +58,11 @@ static const char *WIFI_ITEMS_DISCONNECTED[] = {"Status:  AP Mode / 192.168.4.1"
 static const char *JOY_ITEMS[] = {"X:0.00  Y:0.00"};
 
 static const char **SUB_ITEMS[SECTION_COUNT] = {
-    CAMERA_ITEMS, WIFI_ITEMS_DISCONNECTED, JOY_ITEMS,
+    NULL, WIFI_ITEMS_DISCONNECTED, JOY_ITEMS,  // Camera Config 用动态内容
 };
 
 static const int SUB_COUNTS[SECTION_COUNT] = {
-    3, 3, 1,
+    CAM_CFG_COUNT, 3, 1,
 };
 
 #define HEADER_H 36
@@ -349,6 +356,96 @@ static void cleanup_arc_for_destroy(void)
     cancel_collapse_arc(1);
 }
 
+/* ── Camera Config 编辑 ── */
+
+static void modify_cam_cfg(int idx, int delta)
+{
+    switch (idx) {
+    case 0: { // Res: 4=QVGA, 5=VGA, 8=HD
+        int v[] = {4, 5, 8};
+        int cur = s_cam_cfg.resolution;
+        int pos = (cur == 4) ? 0 : (cur == 5) ? 1 : 2;
+        pos += delta;
+        if (pos < 0) pos = 0;
+        if (pos > 2) pos = 2;
+        s_cam_cfg.resolution = v[pos];
+        break;
+    }
+    case 1: // Quality 0-30
+        s_cam_cfg.quality = (uint8_t)((int)s_cam_cfg.quality + delta);
+        if (s_cam_cfg.quality > 30) s_cam_cfg.quality = 30;
+        break;
+    case 2: s_cam_cfg.mirror = !s_cam_cfg.mirror; break;
+    case 3: s_cam_cfg.flip   = !s_cam_cfg.flip;   break;
+    case 4: // Brightness -2~+2
+        s_cam_cfg.brightness = (int8_t)((int)s_cam_cfg.brightness + delta);
+        if (s_cam_cfg.brightness > 2) s_cam_cfg.brightness = 2;
+        if (s_cam_cfg.brightness < -2) s_cam_cfg.brightness = -2;
+        break;
+    case 5: // Contrast -2~+2
+        s_cam_cfg.contrast = (int8_t)((int)s_cam_cfg.contrast + delta);
+        if (s_cam_cfg.contrast > 2) s_cam_cfg.contrast = 2;
+        if (s_cam_cfg.contrast < -2) s_cam_cfg.contrast = -2;
+        break;
+    case 6: // WB 0~3 循环
+        if (delta > 0) {
+            s_cam_cfg.wb_mode++;
+            if (s_cam_cfg.wb_mode > 3) s_cam_cfg.wb_mode = 0;
+        } else {
+            if (s_cam_cfg.wb_mode == 0) s_cam_cfg.wb_mode = 3;
+            else s_cam_cfg.wb_mode--;
+        }
+        break;
+    case 7: // AE Level -2~+2
+        s_cam_cfg.ae_level = (int8_t)((int)s_cam_cfg.ae_level + delta);
+        if (s_cam_cfg.ae_level > 2) s_cam_cfg.ae_level = 2;
+        if (s_cam_cfg.ae_level < -2) s_cam_cfg.ae_level = -2;
+        break;
+    }
+}
+
+static void update_cam_cfg_display(void)
+{
+    section_t *sec = &s_sections[0];
+    if (!sec->header) return;
+
+    for (int i = 0; i < CAM_CFG_COUNT; i++) {
+        if (!sec->sub_items[i]) continue;
+        lv_obj_t *lbl = lv_obj_get_child(sec->sub_items[i], 0);
+        if (!lbl) continue;
+
+        char buf[28];
+        switch (i) {
+        case 0: {
+            const char *r = s_cam_cfg.resolution == 8 ? "1280x720" :
+                            s_cam_cfg.resolution == 5 ? "640x480" : "320x240";
+            snprintf(buf, sizeof(buf), "%s: %s", CAM_CFG_NAMES[i], r);
+            break;
+        }
+        case 1:
+            snprintf(buf, sizeof(buf), "%s: %u", CAM_CFG_NAMES[i], s_cam_cfg.quality);
+            break;
+        case 2: case 3:
+            snprintf(buf, sizeof(buf), "%s: %s", CAM_CFG_NAMES[i],
+                     (i == 2 ? s_cam_cfg.mirror : s_cam_cfg.flip) ? "ON" : "OFF");
+            break;
+        case 4: case 5: case 7:
+            snprintf(buf, sizeof(buf), "%s: %+d", CAM_CFG_NAMES[i],
+                     (int8_t)(i == 4 ? s_cam_cfg.brightness :
+                              i == 5 ? s_cam_cfg.contrast : s_cam_cfg.ae_level));
+            break;
+        case 6: {
+            const char *w = s_cam_cfg.wb_mode == 0 ? "Auto" :
+                            s_cam_cfg.wb_mode == 1 ? "Sunny" :
+                            s_cam_cfg.wb_mode == 2 ? "Cloudy" : "Fluo";
+            snprintf(buf, sizeof(buf), "%s: %s", CAM_CFG_NAMES[i], w);
+            break;
+        }
+        }
+        lv_label_set_text(lbl, buf);
+    }
+}
+
 static void on_create(lv_obj_t *parent)
 {
     s_page = parent;
@@ -393,10 +490,17 @@ static void on_create(lv_obj_t *parent)
 
         sec->sub_count = count;
         for (int j = 0; j < count; j++) {
-            sec->sub_items[j] = create_sub_item(s_page, items[j], y);
+            /* Camera Config 段（items=NULL）用空文本，由 update_cam_cfg_display 填充 */
+            const char *text = items ? items[j] : "";
+            sec->sub_items[j] = create_sub_item(s_page, text, y);
             y += SUB_H + ITEM_GAP;
         }
     }
+
+    /* 加载 Camera Config 并刷新显示 */
+    s_editing = -1;
+    cam_config_load(&s_cam_cfg);
+    update_cam_cfg_display();
 
     s_selected = 0;
     /* 强制所有段收起，清除任何残留展开状态 */
@@ -410,6 +514,7 @@ static void on_destroy(void)
     cleanup_arc_for_destroy();
     memset(s_sections, 0, sizeof(s_sections));
     s_selected = 0;
+    s_editing = -1;
     s_page = NULL;
 }
 
@@ -443,6 +548,12 @@ static void on_joystick(joystick_evt_t evt)
     switch (evt) {
     case JOY_EVT_LEFT:
     case JOY_EVT_RIGHT: {
+        /* ── Camera Config 编辑态 ── */
+        if (top == UI_STATE_SUB && s_selected == 0 && s_editing >= 0) {
+            modify_cam_cfg(s_editing, evt == JOY_EVT_LEFT ? -1 : 1);
+            update_cam_cfg_display();
+            break;
+        }
         if (top == UI_STATE_SUB) {
             section_t *sec = &s_sections[s_selected];
             lv_obj_t *old = sec->sub_items[s_sub_selected];
@@ -471,6 +582,28 @@ static void on_joystick(joystick_evt_t evt)
         }
         if (s_skip_press) {
             s_skip_press = 0;
+            break;
+        }
+        /* ── Camera Config 编辑态 ── */
+        if (top == UI_STATE_SUB && s_selected == 0) {
+            if (s_editing >= 0) {
+                /* PRESS确认→写NVS→退出编辑 */
+                cam_config_save(&s_cam_cfg);
+                if (s_sections[0].sub_items[s_editing])
+                    set_sub_style(s_sections[0].sub_items[s_editing], 0);
+                s_editing = -1;
+            } else {
+                /* 未编辑→进入编辑态 */
+                s_editing = s_sub_selected;
+                s_app_handled = true;  // 阻止 LONG_PRESS 退出
+                if (s_sections[0].sub_items[s_editing]) {
+                    set_sub_style(s_sections[0].sub_items[s_editing], 1);
+                    /* 编辑态特殊高亮 */
+                    lv_obj_set_style_bg_color(
+                        s_sections[0].sub_items[s_editing],
+                        lv_color_make(80, 150, 80), LV_STATE_DEFAULT);
+                }
+            }
             break;
         }
         if (top == UI_STATE_SUB) {
