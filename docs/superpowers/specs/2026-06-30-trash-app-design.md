@@ -62,14 +62,16 @@ TrashResult(0x32)
 
 ### 状态修正：StreamStopUdp 时机
 
-Android 按"识别"后**立即**做以下三件事：
-1. `udp.stop()` — 本地停止接收 UDP（冻结最后帧）
-2. 显示 CropOverlay（裁剪 UI）
-3. 发 `StreamStopUdp` 通知 ESP32 暂停推流（ESP32 TFT 切到 "Fetching..."）
+Android 按"识别"后**立即**：
+1. Android 发 `StreamStopUdp(0x21)` → ESP32 app_trash **真正停止相机+推流**（释放帧缓冲、停 stream_task、关 UDP socket）
+2. TFT 显示 "Fetching..."
+3. Android 冻结最后帧、显示 CropOverlay
 
-裁剪确认+推理完成后 → 发 `0x32 TrashResult`。
+裁剪确认+推理完成后 → 发 `0x32 TrashResult` → ESP32 TFT 显示结果列表。
 
-PRESS 恢复时：ESP32 发 `0x31` → Android `udp.start()` + `StreamStartUdp`。
+PRESS 恢复时：ESP32 app_trash **重启相机+推流** → 发 `0x31 ResumeCapture` → Android `udp.start()` 恢复接收。
+
+**取消裁剪**：Android 发 `StreamStartUdp(0x20)` → ESP32 重启相机+推流 → Android `udp.start()` 恢复接收。
 
 ## ESP32 app_trash 组件
 
@@ -95,13 +97,13 @@ components/app_trash/
     ▼ (Android连上, 发 0x30 TrashMode)
 [推流中: TFT "Ready"]
     │
-    ▼ (Android 按下识别 → 发 StreamStopUdp)
-[暂停: TFT "Fetching..." ]
+    ▼ (Android 按识别 → StreamStopUdp)
+[停止相机+推流: TFT "Fetching..."]
     │
     ▼ (收到 0x32 TrashResult)
 [结果展示: TFT 英文列表]
     │
-    ▼ (PRESS → 发 0x31 + StreamStartUdp)
+    ▼ (PRESS → 重启相机+推流 + 发 0x31)
 [回到推流中]
 ```
 
@@ -158,24 +160,23 @@ ui/camera/CropOverlay.kt     # 裁剪 UI 组件
 Disconnected → Connecting
     │
     ▼ (TCP成功 + 收到0x30 TrashMode)
-Streaming ─── 点击"识别" → ①udp.stop+②StopUdp+③CropOverlay
+Streaming ─── 点击"识别" → 发StopUdp → CropOverlay
     │                           
-    │         ┌─── 取消裁剪 ──→ 发StreamStartUdp+udp.start → Streaming
-    │         ▼              
-    │      CropOverlay         
+    │     ┌─ 取消裁剪 → 发StartUdp+udp.start → Streaming
+    │     ▼              
+    │  CropOverlay         
     │  (裁剪框确认)            
-    │         │               
-    │         ▼               
-    │      Inferring          
+    │     │               
+    │     ▼               
+    │  Inferring          
     │  (进度指示器)            
-    │         │               
-    │         ▼               
-    │      Result             
-    │  (发0x32 TrashResult)   
-    │         │               
+    │     │               
+    │     ▼               
+    │  Result             
+    │  (发0x32 TrashResult)
+    │     │               
     └── ← 0x31 ResumeCapture ─┘
-           udp.start+StartUdp
-           → Streaming
+           udp.start → Streaming
 ```
 
 ### UI 布局
@@ -234,11 +235,12 @@ Streaming ─── 点击"识别" → ①udp.stop+②StopUdp+③CropOverlay
 
 ### 裁剪实现
 
-- Capture 时暂停 UDP 流（`udp.stop()`），保存当前帧
+- Android 按"识别" → `StreamStopUdp` 通知 ESP32 停相机 → Android 冻结最后帧 → CropOverlay
 - CropOverlay：全屏半透明遮罩 + 可拖动矩形框（Canvas + pointerInput 拖动手柄）
 - 确认 → 缩放矩形区域到 TFLite 模型输入尺寸（224×224），执行推理
-- 推理完 → 发 `StreamStopUdp`（通知 ESP32 已暂停）→ 发 `0x32 TrashResult`
-- 收到 `0x31 ResumeCapture` → `udp.start()` + `StreamStartUdp` → 恢复 Streaming
+- 推理完 → 发 `0x32 TrashResult` → ESP32 显示结果
+- 取消裁剪 → `StreamStartUdp` 通知 ESP32 重启相机 → `udp.start()` 恢复接收
+- 收到 `0x31 ResumeCapture` → `udp.start()` 恢复接收
 
 ### TFLite 推理
 
@@ -277,7 +279,7 @@ Settings      ← 已有
 
 | 场景 | 处理 |
 |------|------|
-| Android 取消裁剪 | 发送 `StreamStartUdp` 恢复推流，不发送结果 |
+| Android 取消裁剪 | 发送 `StreamStartUdp(0x20)` → ESP32 重启相机推流 → Android `udp.start()` 恢复接收 |
 | TFLite 推理失败 | 发 `0x32 TrashResult` 候选数=0，TFT 显示 "Inference failed" |
 | 裁剪区域太小 | 弹 Toast "区域太小"，不允许确认 |
 | Android 断连 | ESP32 自动退出 Trash 模式回到 launcher |
