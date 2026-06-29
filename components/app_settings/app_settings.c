@@ -10,7 +10,8 @@ static const char *TAG = "APP_SETTINGS";
 extern volatile bool s_app_handled;
 static lv_obj_t *s_page = NULL;
 static int s_first_event = 1;
-static int s_skip_press = 0;
+static int s_skip_press = 0;   // 跳过LONG_PRESS塌缩后紧跟的PRESS
+static TickType_t s_last_collapse_tick = 0;  // 最后一次collapse时间戳
 
 /* 塌缩弧进度指示 */
 static lv_obj_t *s_col_overlay = NULL;
@@ -225,6 +226,7 @@ static void collapse_arc_ready(lv_anim_t *a)
     update_expand(sec, 0);
     s_sub_selected = 0;
     s_skip_press = 1;
+    s_last_collapse_tick = xTaskGetTickCount();
     /* '>' 从子项移回表头 */
     for (int j = 0; j < sec->sub_count; j++)
         set_sub_style(sec->sub_items[j], 0);
@@ -352,6 +354,7 @@ static void on_create(lv_obj_t *parent)
     s_page = parent;
     s_first_event = 1;
     s_skip_press = 0;
+    s_last_collapse_tick = 0;
     s_col_animating = false;
     s_col_overlay = NULL;
     s_col_arc = NULL;
@@ -459,6 +462,13 @@ static void on_joystick(joystick_evt_t evt)
     }
 
     case JOY_EVT_PRESS:
+        /* 跳过塌缩后300ms内的PRESS（防松手回弹再展开） */
+        {
+            TickType_t now = xTaskGetTickCount();
+            if (now - s_last_collapse_tick < pdMS_TO_TICKS(300)) {
+                break;
+            }
+        }
         if (s_skip_press) {
             s_skip_press = 0;
             break;

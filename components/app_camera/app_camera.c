@@ -9,6 +9,7 @@
 #include "sys/socket.h"
 #include "lwip/inet.h"
 #include "lwip/netdb.h"
+#include "comms_server.h"
 
 static const char *TAG = "APP_CAMERA";
 
@@ -64,8 +65,10 @@ static void ip_refresh_cb(lv_timer_t *t)
 
 static lv_timer_t *s_cam_timer = NULL;
 static lv_timer_t *s_ip_refresh_timer = NULL;
+static lv_timer_t *s_health_timer = NULL;  // 检查推流状态
 static bool s_streaming = false;
 static bool s_tft_mode = false;
+static bool s_stream_abort = false;
 
 static int s_udp_fd = -1;
 static uint32_t s_android_ip = 0;
@@ -169,6 +172,14 @@ static void stream_task(void *arg)
     bool first_frame = true;
 
     while (1) {
+        /* Android 已断开 → 自动停推流 */
+        if (!g_android_connected) {
+            ESP_LOGI(TAG, "Android disconnected, stopping stream");
+            s_stream_abort = true;
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
+
         camera_fb_t *fb = esp_camera_fb_get();
         if (!fb) { vTaskDelay(1); continue; }
 
@@ -224,6 +235,21 @@ static void stream_task(void *arg)
 
 /* ===================== 进入推流 / TFT 模式 ===================== */
 
+/* 前向声明 */
+static void stop_camera(void);
+static void rebuild_mode_ui(void);
+
+/* 健康检查：断连后自动停推流回模式选择 */
+static void health_check_cb(lv_timer_t *t)
+{
+    (void)t;
+    if (!s_stream_abort) return;
+    s_stream_abort = false;
+    ESP_LOGI(TAG, "Health check: stream abort -> stopping");
+    stop_camera();
+    rebuild_mode_ui();
+}
+
 static void enter_stream_mode(void)
 {
     ESP_LOGI(TAG, "enter_stream_mode: ip=%s port=%u",
@@ -277,6 +303,9 @@ static void enter_stream_mode(void)
 
     xTaskCreate(stream_task, "cam_stream", 4096, NULL, 4, &s_stream_task);
     ESP_LOGI(TAG, "Stream task started, frame_id=%u", s_frame_id);
+
+    /* 健康检查定时器：断连后自动停流回选择界面 */
+    s_health_timer = lv_timer_create(health_check_cb, 500, NULL);
 }
 
 static void enter_tft_mode(void)
@@ -305,8 +334,13 @@ static void stop_camera(void)
 {
     ESP_LOGI(TAG, "stop_camera: streaming=%d tft=%d", s_streaming, s_tft_mode);
 
+    /* 通知 Android 即将断开 */
+    if (s_streaming)
+        comms_server_send_packet(0xF0, NULL, 0);  // 0xF0 = AppExit
+
     if (s_cam_timer)  { lv_timer_del(s_cam_timer);  s_cam_timer  = NULL; }
     if (s_ip_refresh_timer) { lv_timer_del(s_ip_refresh_timer); s_ip_refresh_timer = NULL; }
+    if (s_health_timer)  { lv_timer_del(s_health_timer);  s_health_timer  = NULL; }
     if (s_stream_task) { vTaskDelete(s_stream_task); s_stream_task = NULL; }
     if (s_udp_fd >= 0) { close(s_udp_fd); s_udp_fd = -1; }
     esp_camera_deinit();
@@ -376,6 +410,7 @@ static void on_create(lv_obj_t *parent)
 
     s_streaming = false;
     s_tft_mode  = false;
+    s_stream_abort = false;
     s_cam_timer = NULL;
     s_stream_btn = s_tft_btn = NULL;
     s_frame_id = 0;

@@ -16,6 +16,7 @@ static int s_client_fd = -1;
 
 uint32_t g_android_ip = 0;
 uint16_t g_android_port = 0;
+volatile int g_android_connected = 0;  // 1=有客户端连接
 
 #define PORT 8080
 
@@ -206,6 +207,7 @@ static void tcp_server_task(void *arg)
 
         ESP_LOGI(TAG, "Android connected: %s:%u",
                  inet_ntoa(client.sin_addr), ntohs(client.sin_port));
+        g_android_connected = 1;
         uint8_t cmd, buf[512];
         uint16_t seq;
         uint32_t plen;
@@ -214,6 +216,7 @@ static void tcp_server_task(void *arg)
             handle_packet(s_client_fd, cmd, seq, buf, plen);
 
         ESP_LOGI(TAG, "Android disconnected");
+        g_android_connected = 0;
         close(s_client_fd);
         s_client_fd = -1;
     }
@@ -225,4 +228,21 @@ esp_err_t comms_server_init(void)
     discovery_start();
     ESP_LOGI(TAG, "Comms server started (binary protocol)");
     return ESP_OK;
+}
+
+void comms_server_send_packet(uint8_t cmd, const uint8_t *payload, uint32_t plen)
+{
+    int fd = s_client_fd;
+    if (fd < 0) return;
+    uint32_t total = 3 + plen;
+    uint8_t header[7];
+    header[0] = total & 0xFF;
+    header[1] = (total >> 8) & 0xFF;
+    header[2] = (total >> 16) & 0xFF;
+    header[3] = (total >> 24) & 0xFF;
+    header[4] = cmd;
+    header[5] = 0;  // seq=0
+    header[6] = 0;
+    write(fd, header, 7);
+    if (plen > 0) write(fd, payload, plen);
 }
