@@ -28,11 +28,32 @@ static void sta_switch_timer_cb(TimerHandle_t xTimer)
         s_server = NULL;
     }
 
-    /* 测试已连上，只需切模式、不需要重新 connect */
     esp_wifi_set_mode(WIFI_MODE_STA);
-
     s_wifi_connected = true;
-    s_sta_ip[0] = '\0';
+    s_sta_ip[0] = '\0';  // 稍后由 IP_EVENT_STA_GOT_IP 更新
+}
+
+/* 等待 DHCP 完成后才触发切换 （在独立任务运行，避免 Timer 任务栈溢出） */
+static void sta_switch_delayed_task(void *arg)
+{
+    (void)arg;
+    /* 最多等 5 秒让 DHCP 拿 IP */
+    for (int i = 0; i < 25; i++) {
+        esp_netif_t *netif = esp_netif_get_handle_from_ifkey("STA_DEF");
+        if (netif) {
+            esp_netif_ip_info_t ip;
+            if (esp_netif_get_ip_info(netif, &ip) == ESP_OK && ip.ip.addr != 0) {
+                ESP_LOGI(TAG, "DHCP IP obtained, starting switch timer");
+                break;
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+    /* 用定时器切（不能在 HTTP handler 内调 httpd_stop） */
+    TimerHandle_t timer = xTimerCreate("sta_sw", pdMS_TO_TICKS(100), pdFALSE,
+                                        NULL, sta_switch_timer_cb);
+    if (timer) xTimerStart(timer, 0);
+    vTaskDelete(NULL);
 }
 
 static esp_err_t handler_index(httpd_req_t *req)
@@ -148,10 +169,8 @@ static esp_err_t handler_wifi_test(httpd_req_t *req)
         httpd_resp_set_type(req, "application/json");
         httpd_resp_send(req, resp, -1);   // 先发响应
 
-        /* 创建延迟定时器切换纯 STA */
-        TimerHandle_t timer = xTimerCreate("sta_sw", pdMS_TO_TICKS(500), pdFALSE,
-                                            NULL, sta_switch_timer_cb);
-        if (timer) xTimerStart(timer, 0);
+        /* 用独立任务等待 DHCP IP 后切换纯 STA */
+        xTaskCreate(sta_switch_delayed_task, "sta_sw", 3072, NULL, 5, NULL);
     } else {
         /* 失败：回退 AP 模式 */
         esp_wifi_disconnect();

@@ -13,4 +13,8 @@ void comms_server_send_packet(uint8_t cmd, const uint8_t *payload, uint32_t plen
 /** Android 客户端连接状态 */
 extern volatile int g_android_connected;
 
+/** Android 客户端 IP 和 UDP 端口（StreamStartUdp 时设置） */
+extern uint32_t g_android_ip;
+extern uint16_t g_android_port;
+
 #endif

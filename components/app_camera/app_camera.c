@@ -71,8 +71,6 @@ static bool s_tft_mode = false;
 static bool s_stream_abort = false;
 
 static int s_udp_fd = -1;
-static uint32_t s_android_ip = 0;
-static uint16_t s_android_port = 0;
 static TaskHandle_t s_stream_task = NULL;
 static uint32_t s_frame_id = 0;
 
@@ -128,10 +126,10 @@ static esp_err_t init_camera(framesize_t size, pixformat_t fmt)
         .ledc_channel = LEDC_CHANNEL_0,
         .pixel_format = fmt,
         .frame_size = size,
-        .jpeg_quality = 10,
-        .fb_count = 1,
+        .jpeg_quality = 18,
+        .fb_count = 2,
         .fb_location = CAMERA_FB_IN_PSRAM,
-        .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
+        .grab_mode = CAMERA_GRAB_LATEST,
     };
     esp_err_t ret = esp_camera_init(&cfg);
     if (ret == ESP_OK) {
@@ -170,6 +168,7 @@ static void stream_task(void *arg)
     (void)arg;
     uint8_t pkt[1500];
     bool first_frame = true;
+    uint32_t frame_count = 0;
 
     while (1) {
         /* Android 已断开 → 自动停推流 */
@@ -183,11 +182,14 @@ static void stream_task(void *arg)
         camera_fb_t *fb = esp_camera_fb_get();
         if (!fb) { vTaskDelay(1); continue; }
 
+        frame_count++;
         if (first_frame) {
-            ESP_LOGI(TAG, "First frame sent: %dx%d, %d bytes, frag=%d",
+            ESP_LOGI(TAG, "First frame: %dx%d, %d bytes, frag=%d, frame=%u",
                      fb->width, fb->height, fb->len,
-                     (int)((fb->len + 1388 - 1) / 1388));
+                     (int)((fb->len + 1388 - 1) / 1388), frame_count);
             first_frame = false;
+        } else if (frame_count % 30 == 0) {
+            ESP_LOGI(TAG, "Stream alive: frame=%u, %d bytes", frame_count, fb->len);
         }
 
         uint8_t *jpeg = fb->buf;
@@ -219,17 +221,19 @@ static void stream_task(void *arg)
 
             struct sockaddr_in dest;
             dest.sin_family = AF_INET;
-            dest.sin_port = htons(s_android_port);
-            dest.sin_addr.s_addr = s_android_ip;
+            dest.sin_port = htons(g_android_port);
+            dest.sin_addr.s_addr = g_android_ip;
             sendto(s_udp_fd, pkt, (int)(12 + chunk), 0,
                    (struct sockaddr *)&dest, sizeof(dest));
 
             frag_id++;
             offset += chunk;
+            vTaskDelay(pdMS_TO_TICKS(2));  // 双缓冲流水线，间隔可缩小
         }
 
         s_frame_id++;
         esp_camera_fb_return(fb);
+        // 无帧间隔：连续发送靠分片间隔控速，防WiFi热点休眠丢包
     }
 }
 
@@ -254,11 +258,12 @@ static void health_check_cb(lv_timer_t *t)
     rebuild_mode_ui();
 }
 
-/* 等Android连上后再真正开摄像头+推流 */
+/* 等Android连上 + 收到UDP端口后再真正开摄像头+推流 */
 static void try_start_stream(lv_timer_t *t)
 {
     (void)t;
-    if (!g_android_connected) return;  // 还没连，继续等
+    if (!g_android_connected) return;                   // TCP未连
+    if (g_android_port == 0 || g_android_ip == 0) return;  // 未收到StreamStartUdp
     if (s_wait_android_timer) {
         lv_timer_del(s_wait_android_timer);
         s_wait_android_timer = NULL;
@@ -292,7 +297,7 @@ static void try_start_stream(lv_timer_t *t)
 static void enter_stream_mode(void)
 {
     ESP_LOGI(TAG, "enter_stream_mode: ip=%s port=%u (waiting for Android)",
-             inet_ntoa(*((struct in_addr *)&s_android_ip)), s_android_port);
+             inet_ntoa(*((struct in_addr *)&g_android_ip)), g_android_port);
 
     /* 清空选择界面 */
     lv_obj_clean(s_page);
@@ -359,6 +364,7 @@ static void stop_camera(void)
     esp_camera_deinit();
     s_streaming = false;
     s_tft_mode  = false;
+    s_stream_abort = false;
     s_frame_id  = 0;
     ESP_LOGI(TAG, "Camera stopped");
 }
@@ -367,6 +373,7 @@ static void stop_camera(void)
 
 static void rebuild_mode_ui(void)
 {
+    if (!s_page) return;
     lv_obj_clean(s_page);
     s_stream_btn = s_tft_btn = NULL;
     s_focus_idx = FOCUS_STREAM;
@@ -468,14 +475,16 @@ static void on_joystick(joystick_evt_t evt)
     /* ── 模式选择界面 ── */
     switch (evt) {
         case JOY_EVT_UP:
-            s_focus_idx = FOCUS_TFT;
-            update_focus_style();
-            ESP_LOGD(TAG, "focus -> TFT");
-            break;
-        case JOY_EVT_DOWN:
+        case JOY_EVT_LEFT:   // XY互换：物理推UP/DOWN→LEFT/RIGHT
             s_focus_idx = FOCUS_STREAM;
             update_focus_style();
             ESP_LOGD(TAG, "focus -> Stream");
+            break;
+        case JOY_EVT_DOWN:
+        case JOY_EVT_RIGHT:  // XY互换：物理推UP/DOWN→LEFT/RIGHT
+            s_focus_idx = FOCUS_TFT;
+            update_focus_style();
+            ESP_LOGD(TAG, "focus -> TFT");
             break;
         case JOY_EVT_PRESS:
             if (s_focus_idx == FOCUS_STREAM) {

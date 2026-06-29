@@ -174,9 +174,6 @@ static void tcp_server_task(void *arg)
     int opt = 1;
     setsockopt(s_server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    struct timeval timeout = {10, 0};
-    setsockopt(s_server_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-
     if (bind(s_server_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         ESP_LOGE(TAG, "Bind failed");
         close(s_server_fd);
@@ -217,6 +214,8 @@ static void tcp_server_task(void *arg)
 
         ESP_LOGI(TAG, "Android disconnected");
         g_android_connected = 0;
+        g_android_ip = 0;
+        g_android_port = 0;
         close(s_client_fd);
         s_client_fd = -1;
     }
