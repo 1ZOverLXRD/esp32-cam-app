@@ -238,6 +238,10 @@ static void stream_task(void *arg)
 /* 前向声明 */
 static void stop_camera(void);
 static void rebuild_mode_ui(void);
+static void try_start_stream(lv_timer_t *t);
+
+/* 等待Android连接定时器 */
+static lv_timer_t *s_wait_android_timer = NULL;
 
 /* 健康检查：断连后自动停推流回模式选择 */
 static void health_check_cb(lv_timer_t *t)
@@ -250,49 +254,27 @@ static void health_check_cb(lv_timer_t *t)
     rebuild_mode_ui();
 }
 
-static void enter_stream_mode(void)
+/* 等Android连上后再真正开摄像头+推流 */
+static void try_start_stream(lv_timer_t *t)
 {
-    ESP_LOGI(TAG, "enter_stream_mode: ip=%s port=%u",
-             inet_ntoa(*((struct in_addr *)&s_android_ip)), s_android_port);
-
-    /* 清空选择界面（含 Camera 标题），避免重叠 */
-    lv_obj_clean(s_page);
-    s_hint = NULL;
-    s_ip_label = NULL;
-    s_ip_refresh_timer = NULL;
-    s_stream_btn = s_tft_btn = NULL;
+    (void)t;
+    if (!g_android_connected) return;  // 还没连，继续等
+    if (s_wait_android_timer) {
+        lv_timer_del(s_wait_android_timer);
+        s_wait_android_timer = NULL;
+    }
+    if (s_hint) lv_label_set_text(s_hint, "Android OK, starting...");
 
     if (init_camera(FRAMESIZE_HD, PIXFORMAT_JPEG) != ESP_OK) {
-        s_hint = lv_label_create(s_page);
-        lv_label_set_text(s_hint, "Camera init failed");
-        lv_obj_set_style_text_color(s_hint, lv_color_make(255, 80, 80), LV_STATE_DEFAULT);
-        lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -16);
+        if (s_hint) lv_label_set_text(s_hint, "Camera init failed");
         ESP_LOGE(TAG, "Camera init failed");
         return;
     }
 
     s_streaming = true;
     s_tft_mode  = false;
-
-    /* 创建底部提示 */
-    s_hint = lv_label_create(s_page);
-    lv_label_set_text(s_hint, "Long PRESS exit");
-    lv_obj_set_style_text_color(s_hint, lv_color_white(), LV_STATE_DEFAULT);
-    lv_obj_set_style_text_align(s_hint, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
-    lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -16);
-
-    /* 创建 IP 标签（顶部居中，y=0 无标题遮挡） */
-    if (s_ip_label) { lv_obj_del(s_ip_label); s_ip_label = NULL; }
-    s_ip_label = lv_label_create(s_page);
-    lv_label_set_text(s_ip_label, get_sta_ip_str());
-    lv_obj_set_style_text_color(s_ip_label, lv_color_make(100, 200, 255), LV_STATE_DEFAULT);
-    lv_obj_set_style_text_align(s_ip_label, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
-    lv_obj_set_width(s_ip_label, 220);
-    lv_obj_align(s_ip_label, LV_ALIGN_TOP_MID, 0, 4);
-    ESP_LOGI(TAG, "STA IP: %s", get_sta_ip_str());
-
-    /* 每 2 秒刷新 IP（STA 连上热点获 DHCP IP 后自动更新） */
-    s_ip_refresh_timer = lv_timer_create(ip_refresh_cb, 2000, NULL);
+    if (s_hint) lv_label_set_text(s_hint, "Long PRESS exit");
+    if (s_ip_label) lv_label_set_text(s_ip_label, get_sta_ip_str());
 
     s_udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (s_udp_fd < 0) {
@@ -304,8 +286,38 @@ static void enter_stream_mode(void)
     xTaskCreate(stream_task, "cam_stream", 4096, NULL, 4, &s_stream_task);
     ESP_LOGI(TAG, "Stream task started, frame_id=%u", s_frame_id);
 
-    /* 健康检查定时器：断连后自动停流回选择界面 */
     s_health_timer = lv_timer_create(health_check_cb, 500, NULL);
+}
+
+static void enter_stream_mode(void)
+{
+    ESP_LOGI(TAG, "enter_stream_mode: ip=%s port=%u (waiting for Android)",
+             inet_ntoa(*((struct in_addr *)&s_android_ip)), s_android_port);
+
+    /* 清空选择界面 */
+    lv_obj_clean(s_page);
+    s_hint = NULL;
+    s_ip_label = NULL;
+    s_ip_refresh_timer = NULL;
+    s_stream_btn = s_tft_btn = NULL;
+
+    /* 显示等待提示 */
+    s_hint = lv_label_create(s_page);
+    lv_label_set_text(s_hint, "Connect Android client...");
+    lv_obj_set_style_text_color(s_hint, lv_color_make(200, 200, 100), LV_STATE_DEFAULT);
+    lv_obj_set_style_text_align(s_hint, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
+    lv_obj_align(s_hint, LV_ALIGN_CENTER, 0, 0);
+
+    s_ip_label = lv_label_create(s_page);
+    lv_label_set_text(s_ip_label, get_sta_ip_str());
+    lv_obj_set_style_text_color(s_ip_label, lv_color_make(100, 200, 255), LV_STATE_DEFAULT);
+    lv_obj_set_style_text_align(s_ip_label, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
+    lv_obj_set_width(s_ip_label, 220);
+    lv_obj_align(s_ip_label, LV_ALIGN_TOP_MID, 0, 4);
+    s_ip_refresh_timer = lv_timer_create(ip_refresh_cb, 2000, NULL);
+
+    /* 每200ms检查一次Android连接 */
+    s_wait_android_timer = lv_timer_create(try_start_stream, 200, NULL);
 }
 
 static void enter_tft_mode(void)
@@ -341,6 +353,7 @@ static void stop_camera(void)
     if (s_cam_timer)  { lv_timer_del(s_cam_timer);  s_cam_timer  = NULL; }
     if (s_ip_refresh_timer) { lv_timer_del(s_ip_refresh_timer); s_ip_refresh_timer = NULL; }
     if (s_health_timer)  { lv_timer_del(s_health_timer);  s_health_timer  = NULL; }
+    if (s_wait_android_timer) { lv_timer_del(s_wait_android_timer); s_wait_android_timer = NULL; }
     if (s_stream_task) { vTaskDelete(s_stream_task); s_stream_task = NULL; }
     if (s_udp_fd >= 0) { close(s_udp_fd); s_udp_fd = -1; }
     esp_camera_deinit();
