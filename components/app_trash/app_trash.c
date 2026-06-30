@@ -190,7 +190,13 @@ static void stop_streaming(void)
 {
     ESP_LOGI(TAG, "stop_streaming: state=%s streaming=%d",
              state_name(s_state), s_streaming);
+
+    /* 1. 通知 Android 即将断开，使 g_android_connected=0 → 流任务自然退出 */
+    comms_server_send_packet(0xF0, NULL, 0);  // AppExit
+
+    /* 2. 等一小段时间让流任务检查到断开后退出 */
     if (s_stream_task) {
+        vTaskDelay(pdMS_TO_TICKS(50));
         vTaskDelete(s_stream_task);
         s_stream_task = NULL;
     }
