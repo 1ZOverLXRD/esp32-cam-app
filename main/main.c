@@ -55,6 +55,8 @@ static void wifi_ap_init(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "WiFi AP started: " WIFI_AP_SSID " / " WIFI_AP_PASS);
+    esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED,
+        &wifi_event_handler, NULL);
     esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
         &wifi_event_handler, NULL);
 }
@@ -121,13 +123,15 @@ void app_main(void)
 static void wifi_event_handler(void *arg, esp_event_base_t base,
                                 int32_t id, void *data)
 {
+    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        ESP_LOGI(TAG, "STA disconnected, reconnecting...");
+        esp_wifi_connect();
+    }
     if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *evt = (ip_event_got_ip_t *)data;
         snprintf(s_sta_ip, sizeof(s_sta_ip), IPSTR, IP2STR(&evt->ip_info.ip));
         ESP_LOGI(TAG, "STA got IP: %s", s_sta_ip);
-        /* IP变化不重要，只记一下日志，UI由 HTML 回调处理 */
     }
-    /* 不处理断开事件 — 纯STA一次性，用户手动连，断开即失联 */
 }
 
 static void joy_event_task(void *arg)

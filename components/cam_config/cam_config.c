@@ -7,7 +7,7 @@ static const char *TAG = "CAM_CFG";
 
 const cam_config_t CAM_CONFIG_DEFAULT = {
     .resolution = 8,    // FRAMESIZE_HD
-    .quality = 10,
+    .quality = 15,
     .mirror = 1,        // ON (镜像显示)
     .flip = 0,
     .brightness = 0,

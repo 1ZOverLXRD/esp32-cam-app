@@ -127,11 +127,18 @@ static esp_err_t init_camera(framesize_t size, pixformat_t fmt)
         .ledc_channel = LEDC_CHANNEL_0,
         .pixel_format = fmt,
         .frame_size = size,
-        .jpeg_quality = 18,
+        .jpeg_quality = 15,
         .fb_count = 2,
         .fb_location = CAMERA_FB_IN_PSRAM,
         .grab_mode = CAMERA_GRAB_LATEST,
     };
+
+    /* 从 NVS 读取 quality 覆盖默认 */
+    cam_config_t cam_cfg;
+    cam_config_load(&cam_cfg);
+    cfg.jpeg_quality = cam_cfg.quality;
+    cfg.frame_size = cam_cfg.resolution;
+
     esp_err_t ret = esp_camera_init(&cfg);
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "Camera init OK: size=%dx%d fmt=%d",
@@ -270,28 +277,48 @@ static void apply_cam_config(void)
         return;
     }
 
-    s->set_framesize(s, cfg.resolution);
-    s->set_quality(s, cfg.quality);
+    /* set_framesize / set_quality 跳过：init_camera 已从 NVS 设好 */
     s->set_hmirror(s, cfg.mirror);
     s->set_vflip(s, cfg.flip);
-    s->set_brightness(s, cfg.brightness);
-    s->set_contrast(s, cfg.contrast);
-    s->set_wb_mode(s, cfg.wb_mode);
-    s->set_ae_level(s, cfg.ae_level);
-    ESP_LOGI(TAG, "Sensor config applied: res=%u qual=%u mir=%u flip=%u",
-             cfg.resolution, cfg.quality, cfg.mirror, cfg.flip);
+    /* 强制开启自动曝光和白平衡（驱动 init 可能没保证） */
+    s->set_exposure_ctrl(s, 1);
+    s->set_aec_value(s, 300);
+    s->set_whitebal(s, 1);
+    s->set_awb_gain(s, 1);
+    /* 非默认值才写，避免覆盖 sensor init 的优化值 */
+    if (cfg.brightness != 0) s->set_brightness(s, cfg.brightness);
+    if (cfg.contrast != 0)   s->set_contrast(s, cfg.contrast);
+    if (cfg.wb_mode != 0)    s->set_wb_mode(s, cfg.wb_mode);
+    if (cfg.ae_level != 0)   s->set_ae_level(s, cfg.ae_level);
+    ESP_LOGI(TAG, "Sensor config applied: qual=%u mir=%u flip=%u",
+             cfg.quality, cfg.mirror, cfg.flip);
 }
 
 /* 等Android连上 + 收到UDP端口后再真正开摄像头+推流 */
+static int s_wait_timeout = 0;  // 等待超时计数
+
 static void try_start_stream(lv_timer_t *t)
 {
     (void)t;
-    if (!g_android_connected) return;                   // TCP未连
+    if (!g_android_connected) {
+        s_wait_timeout++;
+        if (s_wait_timeout >= 300) {  // 200ms × 300 = 60 秒
+            ESP_LOGW(TAG, "Android connect timeout, exiting");
+            if (s_wait_android_timer) {
+                lv_timer_del(s_wait_android_timer);
+                s_wait_android_timer = NULL;
+            }
+            stop_camera();
+            rebuild_mode_ui();
+        }
+        return;
+    }
     if (g_android_port == 0 || g_android_ip == 0) return;  // 未收到StreamStartUdp
     if (s_wait_android_timer) {
         lv_timer_del(s_wait_android_timer);
         s_wait_android_timer = NULL;
     }
+    s_wait_timeout = 0;
     if (s_hint) lv_label_set_text(s_hint, "Android OK, starting...");
 
     if (init_camera(FRAMESIZE_HD, PIXFORMAT_JPEG) != ESP_OK) {
@@ -462,6 +489,7 @@ static void on_create(lv_obj_t *parent)
     s_frame_id = 0;
     s_focus_idx = FOCUS_STREAM;
     s_skip_press = false;
+    s_wait_timeout = 0;
 
     /* 确保 STA 网口的 DHCP 客户端在运行 */
     for (esp_netif_t *n = esp_netif_next(NULL); n; n = esp_netif_next(n)) {

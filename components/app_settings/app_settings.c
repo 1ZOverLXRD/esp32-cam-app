@@ -371,9 +371,10 @@ static void modify_cam_cfg(int idx, int delta)
         s_cam_cfg.resolution = v[pos];
         break;
     }
-    case 1: // Quality 0-30
+    case 1: // Quality 8-25（<8 在 1280x720 下帧太大导致 FB-OVF）
         s_cam_cfg.quality = (uint8_t)((int)s_cam_cfg.quality + delta);
-        if (s_cam_cfg.quality > 30) s_cam_cfg.quality = 30;
+        if (s_cam_cfg.quality > 25) s_cam_cfg.quality = 25;
+        if (s_cam_cfg.quality < 8)  s_cam_cfg.quality = 8;
         break;
     case 2: s_cam_cfg.mirror = !s_cam_cfg.mirror; break;
     case 3: s_cam_cfg.flip   = !s_cam_cfg.flip;   break;
@@ -547,10 +548,13 @@ static void on_joystick(joystick_evt_t evt)
 
     switch (evt) {
     case JOY_EVT_LEFT:
-    case JOY_EVT_RIGHT: {
-        /* ── Camera Config 编辑态 ── */
+    case JOY_EVT_RIGHT:
+    case JOY_EVT_UP:
+    case JOY_EVT_DOWN: {
+        /* ── Camera Config 编辑态：LEFT=减, RIGHT=增, UP/DOWN 同样映射（XY互换） ── */
         if (top == UI_STATE_SUB && s_selected == 0 && s_editing >= 0) {
-            modify_cam_cfg(s_editing, evt == JOY_EVT_LEFT ? -1 : 1);
+            int delta = (evt == JOY_EVT_LEFT || evt == JOY_EVT_UP) ? -1 : 1;
+            modify_cam_cfg(s_editing, delta);
             update_cam_cfg_display();
             break;
         }
