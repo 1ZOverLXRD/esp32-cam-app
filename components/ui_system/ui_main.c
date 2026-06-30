@@ -8,6 +8,7 @@
 extern app_t app_settings;
 extern app_t app_weather;
 extern app_t app_camera;
+extern app_t app_trash;
 
 static const char *TAG = "UI_MAIN";
 
@@ -323,6 +324,7 @@ static void open_current_app(void)
     /* 查找并激活对应的APP实例 */
     s_active_app = NULL;
     if (real_idx == 0) s_active_app = &app_settings;
+    else if (real_idx == 1) s_active_app = &app_trash;
     else if (real_idx == 2) s_active_app = &app_weather;
     else if (real_idx == 3) s_active_app = &app_camera;
 
