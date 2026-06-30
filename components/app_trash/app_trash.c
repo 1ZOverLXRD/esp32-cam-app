@@ -4,6 +4,7 @@
 #include "lvgl.h"
 #include "esp_camera.h"
 #include "esp_timer.h"
+#include "esp_netif.h"
 #include "cam_config.h"
 #include "string.h"
 #include "sys/socket.h"
@@ -209,6 +210,15 @@ static void try_start_stream(lv_timer_t *t)
     /* 等 Android 发来 StreamStartUdp 拿到端口后再开相机推流 */
     if (g_android_port == 0 || g_android_ip == 0) return;
 
+    /* 防止与 on_trash_cmd(0x20) 竞态 — 如果已经在推流则跳过 */
+    if (s_streaming) {
+        if (s_wait_android_timer) {
+            lv_timer_del(s_wait_android_timer);
+            s_wait_android_timer = NULL;
+        }
+        return;
+    }
+
     if (s_wait_android_timer) {
         lv_timer_del(s_wait_android_timer);
         s_wait_android_timer = NULL;
@@ -291,14 +301,42 @@ static void on_trash_cmd(uint8_t cmd, uint16_t seq,
 
 /* ── APP lifecycle ── */
 
+/* 从 STA 网口获取 IP（同 Camera app 做法，不依赖 s_sta_ip 全局变量） */
+static const char *get_sta_ip_str(void)
+{
+    static char buf[16] = "0.0.0.0";
+    esp_netif_t *sta = NULL;
+    esp_netif_t *ap  = NULL;
+    for (esp_netif_t *n = esp_netif_next(NULL); n; n = esp_netif_next(n)) {
+        const char *key = esp_netif_get_ifkey(n);
+        if (key && strstr(key, "STA"))  sta = n;
+        if (key && strstr(key, "AP"))   ap  = n;
+    }
+    if (sta) {
+        esp_netif_ip_info_t ip;
+        if (esp_netif_get_ip_info(sta, &ip) == ESP_OK && ip.ip.addr != 0) {
+            snprintf(buf, sizeof(buf), IPSTR, IP2STR(&ip.ip));
+            return buf;
+        }
+    }
+    for (esp_netif_t *n = esp_netif_next(NULL); n; n = esp_netif_next(n)) {
+        if (n == ap) continue;
+        esp_netif_ip_info_t ip;
+        if (esp_netif_get_ip_info(n, &ip) == ESP_OK && ip.ip.addr != 0) {
+            snprintf(buf, sizeof(buf), IPSTR, IP2STR(&ip.ip));
+            break;
+        }
+    }
+    return buf;
+}
+
 /* 每 2 秒刷新 IP 标签 */
 static void ip_refresh_cb(lv_timer_t *t)
 {
     (void)t;
-    /* s_page 存在即代表 APP 存活，更新 IP 标签（第一个子对象） */
     if (s_page) {
         lv_obj_t *ip = lv_obj_get_child(s_page, 0);
-        if (ip) lv_label_set_text(ip, s_sta_ip);
+        if (ip) lv_label_set_text(ip, get_sta_ip_str());
     }
 }
 
@@ -313,7 +351,7 @@ static void on_create(lv_obj_t *parent)
 
     /* IP label (top) */
     lv_obj_t *ip = lv_label_create(s_page);
-    lv_label_set_text(ip, s_sta_ip);
+    lv_label_set_text(ip, get_sta_ip_str());
     lv_obj_set_style_text_color(ip, lv_color_make(100, 200, 255), LV_STATE_DEFAULT);
     lv_obj_set_style_text_align(ip, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
     lv_obj_align(ip, LV_ALIGN_TOP_MID, 0, 4);
