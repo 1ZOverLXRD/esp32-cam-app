@@ -64,6 +64,17 @@ static void apply_cam_config(void)
              cfg.quality, cfg.mirror, cfg.flip);
 }
 
+/* ── State → name map for logging ── */
+static const char *state_name(trash_state_t st) {
+    switch (st) {
+        case TRASH_IDLE:      return "IDLE";
+        case TRASH_STREAMING: return "STREAMING";
+        case TRASH_FETCHING:  return "FETCHING";
+        case TRASH_RESULT:    return "RESULT";
+        default:              return "?";
+    }
+}
+
 /* ── UDP stream task (from app_camera.c) ── */
 static void stream_task(void *arg)
 {
@@ -126,6 +137,8 @@ static void stream_task(void *arg)
 /* ── Start / Stop streaming ── */
 static void start_streaming(void)
 {
+    ESP_LOGI(TAG, "start_streaming: state=%s streaming=%d",
+             state_name(s_state), s_streaming);
     /* 防止竞态：立即设标志，不等相机初始化完 */
     if (s_streaming) {
         ESP_LOGW(TAG, "start_streaming skipped — already streaming");
@@ -156,7 +169,7 @@ static void start_streaming(void)
     cfg.frame_size = cam_cfg.resolution;
 
     if (esp_camera_init(&cfg) != ESP_OK) {
-        ESP_LOGE(TAG, "Camera init failed");
+        ESP_LOGE(TAG, "Camera init FAILED (will crash soon)");
         return;
     }
     apply_cam_config();
@@ -175,6 +188,8 @@ static void start_streaming(void)
 
 static void stop_streaming(void)
 {
+    ESP_LOGI(TAG, "stop_streaming: state=%s streaming=%d",
+             state_name(s_state), s_streaming);
     if (s_stream_task) {
         vTaskDelete(s_stream_task);
         s_stream_task = NULL;
@@ -234,6 +249,7 @@ static void try_start_stream(lv_timer_t *t)
     start_streaming();
     if (s_status_label)
         lv_label_set_text(s_status_label, "Ready for capture");
+    ESP_LOGI(TAG, "try_start_stream done -> STREAMING");
 }
 
 /* ── Command callback (comms_server 0x20-0x4F routing) ── */
@@ -244,6 +260,8 @@ static void on_trash_cmd(uint8_t cmd, uint16_t seq,
 
     switch (cmd) {
     case 0x20: /* StreamStartUdp from Android — cancel crop or initial start */
+        ESP_LOGI(TAG, "CMD 0x20: state=%s streaming=%d",
+                 state_name(s_state), s_streaming);
         if (s_state != TRASH_STREAMING) {
             start_streaming();
             if (s_status_label)
@@ -252,6 +270,8 @@ static void on_trash_cmd(uint8_t cmd, uint16_t seq,
         break;
 
     case 0x21: /* StreamStopUdp from Android — "识别" pressed */
+        ESP_LOGI(TAG, "CMD 0x21: state=%s streaming=%d",
+                 state_name(s_state), s_streaming);
         stop_streaming();
         s_state = TRASH_FETCHING;
         if (s_status_label)
@@ -263,6 +283,7 @@ static void on_trash_cmd(uint8_t cmd, uint16_t seq,
     case 0x32: { /* TrashResult */
         if (plen < 1) break;
         uint8_t count = payload[0];
+        ESP_LOGI(TAG, "CMD 0x32 TrashResult: count=%d", count);
         s_state = TRASH_RESULT;
 
         if (count == 0) {
@@ -341,7 +362,11 @@ static void ip_refresh_cb(lv_timer_t *t)
     (void)t;
     if (s_page) {
         lv_obj_t *ip = lv_obj_get_child(s_page, 0);
-        if (ip) lv_label_set_text(ip, get_sta_ip_str());
+        if (ip) {
+            const char *ip_str = get_sta_ip_str();
+            ESP_LOGI(TAG, "IP refresh: %s", ip_str);
+            lv_label_set_text(ip, ip_str);
+        }
     }
 }
 
@@ -386,10 +411,13 @@ static void on_create(lv_obj_t *parent)
     s_trash_mode_sent = false;
     s_wait_android_timer = lv_timer_create(try_start_stream, 200, NULL);
     s_ip_refresh_timer = lv_timer_create(ip_refresh_cb, 2000, NULL);
+    ESP_LOGI(TAG, "on_create done, IP=%s", get_sta_ip_str());
 }
 
 static void on_destroy(void)
 {
+    ESP_LOGI(TAG, "on_destroy: state=%s streaming=%d",
+             state_name(s_state), s_streaming);
     stop_streaming();
     if (s_wait_android_timer) {
         lv_timer_del(s_wait_android_timer);
@@ -410,6 +438,7 @@ static void on_destroy(void)
 static void on_joystick(joystick_evt_t evt)
 {
     if (evt == JOY_EVT_PRESS && s_state == TRASH_RESULT) {
+        ESP_LOGI(TAG, "PRESS → resume streaming");
         /* Resume streaming */
         start_streaming();
         comms_server_send_packet(0x31, NULL, 0); /* ResumeCapture → Android */
