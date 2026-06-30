@@ -148,12 +148,14 @@ static void handle_packet(int fd, uint8_t cmd, uint16_t seq,
         } else {
             ESP_LOGW(TAG, "StreamStartUdp payload too short: %u", plen);
         }
+        if (s_app_handler) s_app_handler(cmd, seq, payload, plen);
         break;
     }
 
     case 0x21: // StreamStopUdp
         send_response(fd, 0x21, seq, NULL, 0);
         ESP_LOGI(TAG, "StreamStopUdp");
+        if (s_app_handler) s_app_handler(cmd, seq, payload, plen);
         break;
 
     case 0x30: case 0x31: case 0x32:
