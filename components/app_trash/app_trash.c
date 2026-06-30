@@ -328,10 +328,7 @@ static void on_destroy(void)
         lv_timer_del(s_wait_android_timer);
         s_wait_android_timer = NULL;
     }
-    if (s_ip_refresh_timer) {
-        lv_timer_del(s_ip_refresh_timer);
-        s_ip_refresh_timer = NULL;
-    }
+    /* s_ip_refresh_timer never created — no cleanup needed */
     comms_server_set_app_handler(NULL);
     s_page = NULL;
     s_status_label = NULL;
