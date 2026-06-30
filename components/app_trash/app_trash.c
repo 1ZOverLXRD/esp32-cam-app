@@ -126,6 +126,14 @@ static void stream_task(void *arg)
 /* ── Start / Stop streaming ── */
 static void start_streaming(void)
 {
+    /* 防止竞态：立即设标志，不等相机初始化完 */
+    if (s_streaming) {
+        ESP_LOGW(TAG, "start_streaming skipped — already streaming");
+        return;
+    }
+    s_streaming = true;
+    s_state = TRASH_STREAMING;
+
     camera_config_t cfg = {
         .pin_pwdn = -1, .pin_reset = -1, .pin_xclk = 15,
         .pin_sscb_sda = 4, .pin_sscb_scl = 5,
@@ -162,7 +170,6 @@ static void start_streaming(void)
 
     xTaskCreate(stream_task, "trash_stream", 4096, NULL, 4, &s_stream_task);
     s_frame_id = 0;
-    s_streaming = true;
     ESP_LOGI(TAG, "Stream started");
 }
 
@@ -225,7 +232,6 @@ static void try_start_stream(lv_timer_t *t)
     }
 
     start_streaming();
-    s_state = TRASH_STREAMING;
     if (s_status_label)
         lv_label_set_text(s_status_label, "Ready for capture");
 }
@@ -240,7 +246,6 @@ static void on_trash_cmd(uint8_t cmd, uint16_t seq,
     case 0x20: /* StreamStartUdp from Android — cancel crop or initial start */
         if (s_state != TRASH_STREAMING) {
             start_streaming();
-            s_state = TRASH_STREAMING;
             if (s_status_label)
                 lv_label_set_text(s_status_label, "Ready for capture");
         }
@@ -408,7 +413,6 @@ static void on_joystick(joystick_evt_t evt)
         /* Resume streaming */
         start_streaming();
         comms_server_send_packet(0x31, NULL, 0); /* ResumeCapture → Android */
-        s_state = TRASH_STREAMING;
         if (s_status_label)
             lv_label_set_text(s_status_label, "Ready for capture");
         if (s_detail_label)
