@@ -17,4 +17,8 @@ extern volatile int g_android_connected;
 extern uint32_t g_android_ip;
 extern uint16_t g_android_port;
 
+/** 注册APP命令回调（CMD 0x30-0x4F 路由到此回调）。传入NULL取消注册。 */
+void comms_server_set_app_handler(void (*handler)(uint8_t cmd, uint16_t seq,
+                                                    const uint8_t *payload, uint32_t plen));
+
 #endif

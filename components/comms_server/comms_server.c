@@ -14,6 +14,8 @@ static const char *TAG = "COMMS";
 static int s_server_fd = -1;
 static int s_client_fd = -1;
 
+static void (*s_app_handler)(uint8_t cmd, uint16_t seq, const uint8_t *payload, uint32_t plen) = NULL;
+
 uint32_t g_android_ip = 0;
 uint16_t g_android_port = 0;
 volatile int g_android_connected = 0;  // 1=有客户端连接
@@ -73,6 +75,12 @@ static void send_error(int fd, uint16_t seq, uint8_t orig_cmd, uint8_t err)
 {
     uint8_t payload[2] = {orig_cmd, err};
     send_response(fd, 0xFF, seq, payload, 2);
+}
+
+void comms_server_set_app_handler(void (*handler)(uint8_t cmd, uint16_t seq,
+                                                    const uint8_t *payload, uint32_t plen))
+{
+    s_app_handler = handler;
 }
 
 /* 命令分发 */
@@ -146,6 +154,20 @@ static void handle_packet(int fd, uint8_t cmd, uint16_t seq,
     case 0x21: // StreamStopUdp
         send_response(fd, 0x21, seq, NULL, 0);
         ESP_LOGI(TAG, "StreamStopUdp");
+        break;
+
+    case 0x30: case 0x31: case 0x32:
+    case 0x33: case 0x34: case 0x35:
+    case 0x36: case 0x37: case 0x38:
+    case 0x39: case 0x3A: case 0x3B:
+    case 0x3C: case 0x3D: case 0x3E: case 0x3F:
+        if (s_app_handler) {
+            s_app_handler(cmd, seq, payload, plen);
+            /* 0x30-0x4F commands: app handler decides whether to send response.
+             * For 0x32 (TrashResult from Android), no response needed. */
+        } else {
+            send_error(fd, seq, cmd, 0x01); // not handled
+        }
         break;
 
     default:
