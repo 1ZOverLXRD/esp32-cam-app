@@ -147,6 +147,7 @@ static void joystick_poll_task(void *arg)
     TickType_t sw_press_ticks = 0;
     int long_press_sent = 0;
     int auto_repeat_count = 0;
+    TickType_t last_dir_change_tick = 0;  // 最后一次方向变化的时间戳
 
     ESP_LOGI(TAG, "Poll task started");
 
@@ -157,6 +158,7 @@ static void joystick_poll_task(void *arg)
                 joystick_send_event(dir);
                 last_dir = dir;
                 auto_repeat_count = 0;
+                last_dir_change_tick = xTaskGetTickCount();  // 记录方向变化时间
             } else if (dir != JOY_EVT_CENTER) {
                 /* 按住方向时，每200ms重复发一次事件（持续移动） */
                 auto_repeat_count++;
@@ -165,6 +167,10 @@ static void joystick_poll_task(void *arg)
                     auto_repeat_count = 0;
                 }
             }
+
+            /* 方向刚变化后的静默期：防止摇杆移动时机械振动误触 SW */
+            TickType_t since_dir_change = xTaskGetTickCount() - last_dir_change_tick;
+            bool sw_guard = (since_dir_change * portTICK_PERIOD_MS) < 150;  // 150ms 静默
 
             /* SW 按键（三采样消抖，低电平有效） */
         // debug_count++;
@@ -175,7 +181,14 @@ static void joystick_poll_task(void *arg)
         //     debug_count = 0;
         // }
 
-        /* SW 按键（三采样消抖，低电平有效） */
+        /* SW 按键（三采样消抖，低电平有效）—— 方向静默期内跳过 */
+        if (sw_guard) {
+            sw_pressed = 0;  // 复位按下状态，防止松开时误发 PRESS
+            long_press_sent = 0;
+            vTaskDelay(pdMS_TO_TICKS(POLL_INTERVAL_MS));
+            continue;
+        }
+
         int sw_samples = 0;
         for (int i = 0; i < 3; i++) {
             sw_samples += gpio_get_level(PIN_SW);
