@@ -27,6 +27,7 @@ static lv_timer_t *s_ip_refresh_timer = NULL;
 static lv_timer_t *s_wait_android_timer = NULL;
 static int s_wait_timeout = 0;
 static bool s_streaming = false;
+static bool s_trash_mode_sent = false;  // 是否已发送 0x30 TrashMode
 static int s_udp_fd = -1;
 static TaskHandle_t s_stream_task = NULL;
 static uint32_t s_frame_id = 0;
@@ -179,7 +180,7 @@ static void stop_streaming(void)
     ESP_LOGI(TAG, "Stream stopped");
 }
 
-/* ── Wait for Android then start stream ── */
+/* ── Wait for Android then send TrashMode and start stream ── */
 static void try_start_stream(lv_timer_t *t)
 {
     (void)t;
@@ -191,11 +192,21 @@ static void try_start_stream(lv_timer_t *t)
                 lv_timer_del(s_wait_android_timer);
                 s_wait_android_timer = NULL;
             }
-            /* Exit app — ui_main handles close via launcher */
             return;
         }
         return;
     }
+
+    /* Android 已连接 → 立即发送 TrashMode，不等 StreamStartUdp */
+    if (!s_trash_mode_sent) {
+        comms_server_send_packet(0x30, NULL, 0);
+        s_trash_mode_sent = true;
+        ESP_LOGI(TAG, "TrashMode sent to Android");
+        if (s_status_label)
+            lv_label_set_text(s_status_label, "Trash mode sent, waiting for UDP...");
+    }
+
+    /* 等 Android 发来 StreamStartUdp 拿到端口后再开相机推流 */
     if (g_android_port == 0 || g_android_ip == 0) return;
 
     if (s_wait_android_timer) {
@@ -204,7 +215,6 @@ static void try_start_stream(lv_timer_t *t)
     }
 
     start_streaming();
-    comms_server_send_packet(0x30, NULL, 0); /* TrashMode → Android */
     s_state = TRASH_STREAMING;
     if (s_status_label)
         lv_label_set_text(s_status_label, "Ready for capture");
@@ -280,6 +290,18 @@ static void on_trash_cmd(uint8_t cmd, uint16_t seq,
 }
 
 /* ── APP lifecycle ── */
+
+/* 每 2 秒刷新 IP 标签 */
+static void ip_refresh_cb(lv_timer_t *t)
+{
+    (void)t;
+    /* s_page 存在即代表 APP 存活，更新 IP 标签（第一个子对象） */
+    if (s_page) {
+        lv_obj_t *ip = lv_obj_get_child(s_page, 0);
+        if (ip) lv_label_set_text(ip, s_sta_ip);
+    }
+}
+
 static void on_create(lv_obj_t *parent)
 {
     s_page = parent;
@@ -318,7 +340,9 @@ static void on_create(lv_obj_t *parent)
 
     s_state = TRASH_IDLE;
     s_wait_timeout = 0;
+    s_trash_mode_sent = false;
     s_wait_android_timer = lv_timer_create(try_start_stream, 200, NULL);
+    s_ip_refresh_timer = lv_timer_create(ip_refresh_cb, 2000, NULL);
 }
 
 static void on_destroy(void)
@@ -328,7 +352,11 @@ static void on_destroy(void)
         lv_timer_del(s_wait_android_timer);
         s_wait_android_timer = NULL;
     }
-    /* s_ip_refresh_timer never created — no cleanup needed */
+    if (s_ip_refresh_timer) {
+        lv_timer_del(s_ip_refresh_timer);
+        s_ip_refresh_timer = NULL;
+    }
+    s_trash_mode_sent = false;
     comms_server_set_app_handler(NULL);
     s_page = NULL;
     s_status_label = NULL;
