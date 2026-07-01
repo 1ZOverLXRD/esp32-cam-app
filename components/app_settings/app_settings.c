@@ -1,6 +1,8 @@
 #include "app_t.h"
 #include "ui_main.h"
 #include "esp_log.h"
+#include "esp_wifi.h"
+#include "nvs_flash.h"
 #include "cam_config.h"
 #include <string.h>
 #include <stdio.h>
@@ -54,7 +56,8 @@ static int s_editing = -1;  // -1=不在编辑, >=0=编辑中的索引
 /* WiFi Info 段：断开 vs 连接 */
 static const char *WIFI_ITEMS_DISCONNECTED[] = {"Status:  AP Mode / 192.168.4.1",
                                                  "SSID:    COLDFISHESP32",
-                                                 "Password: 12060606"};
+                                                 "Password: 12060606",
+                                                 "Reconnect Last"};
 static const char *JOY_ITEMS[] = {"X:0.00  Y:0.00"};
 
 static const char **SUB_ITEMS[SECTION_COUNT] = {
@@ -62,7 +65,7 @@ static const char **SUB_ITEMS[SECTION_COUNT] = {
 };
 
 static const int SUB_COUNTS[SECTION_COUNT] = {
-    CAM_CFG_COUNT, 3, 1,
+    CAM_CFG_COUNT, 4, 1,
 };
 
 #define HEADER_H 36
@@ -274,9 +277,9 @@ void update_wifi_info(void)
                 update_expand(&s_sections[i], s_sections[i].expanded);
     } else {
         /* 断开时重建被删的子项 */
-        sec->sub_count = 3;
+        sec->sub_count = 4;
         int hy = lv_obj_get_y(sec->header);
-        for (int j = 0; j < 3; j++) {
+        for (int j = 0; j < 4; j++) {
             if (!sec->sub_items[j]) {
                 sec->sub_items[j] = create_sub_item(s_page,
                     WIFI_ITEMS_DISCONNECTED[j],
@@ -354,6 +357,40 @@ static void cancel_collapse_arc(int for_destroy)
 static void cleanup_arc_for_destroy(void)
 {
     cancel_collapse_arc(1);
+}
+
+/* ── 从 NVS 读取上次凭据并重连 WiFi ── */
+static void wifi_reconnect_last(void)
+{
+    nvs_handle_t nvs;
+    char ssid[33] = {0}, password[65] = {0};
+    if (nvs_open("wifi_last", NVS_READONLY, &nvs) != ESP_OK) {
+        ESP_LOGW(TAG, "No saved WiFi credentials");
+        return;
+    }
+    size_t len = sizeof(ssid);
+    if (nvs_get_str(nvs, "ssid", ssid, &len) != ESP_OK || strlen(ssid) == 0) {
+        ESP_LOGW(TAG, "No SSID in NVS");
+        nvs_close(nvs);
+        return;
+    }
+    len = sizeof(password);
+    nvs_get_str(nvs, "password", password, &len);
+    nvs_close(nvs);
+
+    ESP_LOGI(TAG, "Reconnecting to last WiFi: %s", ssid);
+
+    esp_wifi_set_mode(WIFI_MODE_APSTA);
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    wifi_config_t sta_cfg = {
+        .sta = { .threshold.authmode = WIFI_AUTH_WPA2_PSK, .sae_pwe_h2e = WPA3_SAE_PWE_BOTH },
+    };
+    strncpy((char *)sta_cfg.sta.ssid, ssid, sizeof(sta_cfg.sta.ssid) - 1);
+    strncpy((char *)sta_cfg.sta.password, password, sizeof(sta_cfg.sta.password) - 1);
+    esp_wifi_set_config(WIFI_IF_STA, &sta_cfg);
+    esp_wifi_connect();
+    ESP_LOGI(TAG, "Reconnect initiated, will auto-switch on DHCP OK");
 }
 
 /* ── Camera Config 编辑 ── */
@@ -611,7 +648,12 @@ static void on_joystick(joystick_evt_t evt)
             break;
         }
         if (top == UI_STATE_SUB) {
-            /* 子项级: PRESS不做任何事（只能LONG_PRESS返回） */
+            /* WiFi Info 段：选中 "Reconnect Last" 时按 PRESS 触发重连 */
+            if (s_selected == WIFI_SEC_IDX && s_sub_selected == s_sections[WIFI_SEC_IDX].sub_count - 1) {
+                wifi_reconnect_last();
+                s_app_handled = true;
+            }
+            /* 其他子项 PRESS 不做任何事（只能 LONG_PRESS 返回） */
             break;
         }
         /* APP级: PRESS展开段并压入子项状态 */

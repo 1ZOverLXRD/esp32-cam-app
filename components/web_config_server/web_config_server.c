@@ -7,6 +7,7 @@
 #include "esp_wifi.h"
 #include "esp_netif.h"
 #include "cJSON.h"
+#include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "../comms_server/discovery.h"
@@ -155,6 +156,18 @@ static esp_err_t handler_wifi_test(httpd_req_t *req)
             esp_netif_ip_info_t ip;
             if (esp_netif_get_ip_info(netif, &ip) == ESP_OK)
                 snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ip.ip));
+        }
+
+        /* 连接成功 → 将凭据写入 NVS 供下次重连 */
+        {
+            nvs_handle_t nvs;
+            if (nvs_open("wifi_last", NVS_READWRITE, &nvs) == ESP_OK) {
+                nvs_set_str(nvs, "ssid", ssid_str);
+                nvs_set_str(nvs, "password", pass_str);
+                nvs_commit(nvs);
+                nvs_close(nvs);
+                ESP_LOGI(TAG, "Saved last WiFi credentials to NVS");
+            }
         }
 
         char resp[128];
