@@ -84,6 +84,9 @@ static void stream_task(void *arg)
     while (1) {
         if (!g_android_connected) {
             ESP_LOGI(TAG, "Disconnected, stopping stream");
+            /* 自清理：让 stop_streaming 不会再尝试删除已退出的任务 */
+            s_stream_task = NULL;
+            s_streaming = false;
             vTaskDelete(NULL);
             return;
         }
@@ -191,10 +194,7 @@ static void stop_streaming(void)
     ESP_LOGI(TAG, "stop_streaming: state=%s streaming=%d",
              state_name(s_state), s_streaming);
 
-    /* 1. 通知 Android 即将断开，使 g_android_connected=0 → 流任务自然退出 */
-    comms_server_send_packet(0xF0, NULL, 0);  // AppExit
-
-    /* 2. 等一小段时间让流任务检查到断开后退出 */
+    /* 停止流任务 + 关闭UDP + 卸载摄像头（不发网络包，避免lwip锁争用） */
     if (s_stream_task) {
         vTaskDelay(pdMS_TO_TICKS(50));
         vTaskDelete(s_stream_task);
@@ -424,6 +424,8 @@ static void on_destroy(void)
 {
     ESP_LOGI(TAG, "on_destroy: state=%s streaming=%d",
              state_name(s_state), s_streaming);
+    /* 先发 AppExit 通知 Android（此时流任务还在，但网络栈正常） */
+    comms_server_send_packet(0xF0, NULL, 0);
     stop_streaming();
     if (s_wait_android_timer) {
         lv_timer_del(s_wait_android_timer);

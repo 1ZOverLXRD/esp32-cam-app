@@ -8,7 +8,8 @@
 #include "esp_netif.h"
 #include "cJSON.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/timers.h"
+#include "freertos/task.h"
+#include "../comms_server/discovery.h"
 #include <string.h>
 
 static const char *TAG = "WEB_CFG";
@@ -17,10 +18,9 @@ extern bool s_wifi_connected;
 extern char s_sta_ip[16];
 extern void update_wifi_info(void);
 
-/* 延迟切换纯 STA — 不能在 HTTP handler 内调 httpd_stop */
-static void sta_switch_timer_cb(TimerHandle_t xTimer)
+/* 切换纯 STA（在独立任务上下文执行，有充足栈空间） */
+static void do_sta_switch(void)
 {
-    (void)xTimer;
     ESP_LOGI(TAG, "Switching to pure STA mode...");
 
     if (s_server) {
@@ -30,7 +30,10 @@ static void sta_switch_timer_cb(TimerHandle_t xTimer)
 
     esp_wifi_set_mode(WIFI_MODE_STA);
     s_wifi_connected = true;
-    s_sta_ip[0] = '\0';  // 稍后由 IP_EVENT_STA_GOT_IP 更新
+    s_sta_ip[0] = '\0';
+
+    /* WiFi 模式切换后重启 UDP discovery（旧 socket 已失效） */
+    discovery_restart();
 }
 
 /* 等待 DHCP 完成后才触发切换 （在独立任务运行，避免 Timer 任务栈溢出） */
@@ -43,16 +46,14 @@ static void sta_switch_delayed_task(void *arg)
         if (netif) {
             esp_netif_ip_info_t ip;
             if (esp_netif_get_ip_info(netif, &ip) == ESP_OK && ip.ip.addr != 0) {
-                ESP_LOGI(TAG, "DHCP IP obtained, starting switch timer");
+                ESP_LOGI(TAG, "DHCP IP obtained, switching...");
                 break;
             }
         }
         vTaskDelay(pdMS_TO_TICKS(200));
     }
-    /* 用定时器切（不能在 HTTP handler 内调 httpd_stop） */
-    TimerHandle_t timer = xTimerCreate("sta_sw", pdMS_TO_TICKS(100), pdFALSE,
-                                        NULL, sta_switch_timer_cb);
-    if (timer) xTimerStart(timer, 0);
+    /* 直接在任务上下文切换（栈充足），不再经过定时器（Tmr Svc 栈小） */
+    do_sta_switch();
     vTaskDelete(NULL);
 }
 

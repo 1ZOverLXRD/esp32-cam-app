@@ -109,6 +109,14 @@ static void handle_packet(int fd, uint8_t cmd, uint16_t seq,
         send_error(fd, seq, cmd, 0x03); // resource unavailable
         break;
 
+    case 0x41: { // WeatherUpdate — Android 推送实时天气数据给天气 App
+        extern void app_weather_update(const uint8_t *data, uint16_t len);
+        app_weather_update(payload, plen);
+        send_response(fd, 0x41, seq, NULL, 0);
+        ESP_LOGI(TAG, "WeatherUpdate received");
+        break;
+    }
+
     case 0x04: { // CityInfo
         uint8_t city[32] = {0};
         strcpy((char*)city, "Zhuzhou");
