@@ -136,6 +136,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
     if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *evt = (ip_event_got_ip_t *)data;
         snprintf(s_sta_ip, sizeof(s_sta_ip), IPSTR, IP2STR(&evt->ip_info.ip));
+        s_wifi_connected = true;
         ESP_LOGI(TAG, "STA got IP: %s", s_sta_ip);
     }
 }

@@ -369,11 +369,11 @@ static void reconnect_timeout_cb(TimerHandle_t t)
     lv_obj_t *lbl = lv_obj_get_child(s_sections[WIFI_SEC_IDX].sub_items[3], 0);
     if (!lbl) return;
     if (s_wifi_connected) {
-        lv_label_set_text(lbl, "Connected \u2713");
+        lv_label_set_text(lbl, "Connected");
         ESP_LOGI(TAG, "Reconnect succeeded");
     } else {
         s_reconnect_abort = true;
-        lv_label_set_text(lbl, "Timeout \u2717");
+        lv_label_set_text(lbl, "Timeout");
         ESP_LOGW(TAG, "Reconnect timeout, falling back to AP");
     }
 }

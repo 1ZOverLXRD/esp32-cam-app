@@ -30,8 +30,8 @@ void web_config_server_switch_to_sta(void)
     }
 
     esp_wifi_set_mode(WIFI_MODE_STA);
-    s_wifi_connected = true;
     s_sta_ip[0] = '\0';
+    /* 注意：不设 s_wifi_connected=true —— 重连场景下 WiFi 还没真实连上 */
 
     /* WiFi 模式切换后重启 UDP discovery（旧 socket 已失效） */
     discovery_restart();
