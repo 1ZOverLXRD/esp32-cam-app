@@ -124,6 +124,12 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
                                 int32_t id, void *data)
 {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        if (s_reconnect_abort) {
+            ESP_LOGW(TAG, "Reconnect abort flag set, stop retrying");
+            esp_wifi_disconnect();
+            esp_wifi_set_mode(WIFI_MODE_AP);
+            return;
+        }
         ESP_LOGI(TAG, "STA disconnected, reconnecting...");
         esp_wifi_connect();
     }

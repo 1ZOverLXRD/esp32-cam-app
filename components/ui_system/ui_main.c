@@ -35,6 +35,7 @@ static bool s_exit_locked = false;
 /* WiFi 门禁 */
 bool s_wifi_connected = false;
 char s_sta_ip[16] = "0.0.0.0";
+volatile bool s_reconnect_abort = false;
 
 /* ===== 全局状态栈 =====
  * 每层存储实际状态值: MAINMENU=0, APP=1, SUB=2 ...

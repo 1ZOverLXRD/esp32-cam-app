@@ -5,6 +5,8 @@
 #include "nvs_flash.h"
 #include "../web_config_server/web_config_server.h"
 #include "cam_config.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/timers.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -360,6 +362,22 @@ static void cleanup_arc_for_destroy(void)
     cancel_collapse_arc(1);
 }
 
+/* ── 重连超时回调（5 秒后检查结果并更新 TFT） ── */
+static void reconnect_timeout_cb(TimerHandle_t t)
+{
+    (void)t;
+    lv_obj_t *lbl = lv_obj_get_child(s_sections[WIFI_SEC_IDX].sub_items[3], 0);
+    if (!lbl) return;
+    if (s_wifi_connected) {
+        lv_label_set_text(lbl, "Connected \u2713");
+        ESP_LOGI(TAG, "Reconnect succeeded");
+    } else {
+        s_reconnect_abort = true;
+        lv_label_set_text(lbl, "Timeout \u2717");
+        ESP_LOGW(TAG, "Reconnect timeout, falling back to AP");
+    }
+}
+
 /* ── 从 NVS 读取上次凭据并重连 WiFi ── */
 static void wifi_reconnect_last(void)
 {
@@ -381,6 +399,11 @@ static void wifi_reconnect_last(void)
 
     ESP_LOGI(TAG, "Reconnecting to last WiFi: %s", ssid);
 
+    /* 重置中止标志 + 更新 TFT 显示 "Connecting..." */
+    s_reconnect_abort = false;
+    lv_label_set_text(lv_obj_get_child(s_sections[WIFI_SEC_IDX].sub_items[3], 0),
+                      "Connecting...");
+
     /* 关闭 AP + HTTP 服务，切换到纯 STA 模式 */
     web_config_server_switch_to_sta();
     vTaskDelay(pdMS_TO_TICKS(200));
@@ -392,6 +415,10 @@ static void wifi_reconnect_last(void)
     strncpy((char *)sta_cfg.sta.password, password, sizeof(sta_cfg.sta.password) - 1);
     esp_wifi_set_config(WIFI_IF_STA, &sta_cfg);
     esp_wifi_connect();
+
+    /* 5 秒超时定时器 */
+    TimerHandle_t tmr = xTimerCreate("recon_tmo", pdMS_TO_TICKS(5000), pdFALSE, NULL, reconnect_timeout_cb);
+    if (tmr) xTimerStart(tmr, 0);
     ESP_LOGI(TAG, "Reconnect initiated, AP closed, STA connecting...");
 }
 
