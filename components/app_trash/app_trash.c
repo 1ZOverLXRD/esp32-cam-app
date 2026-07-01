@@ -264,6 +264,13 @@ static void on_trash_cmd(uint8_t cmd, uint16_t seq,
 {
     (void)seq;
 
+    /* 如果定时器已过期（60秒无连接），Android 连上后补发 TrashMode */
+    if (!s_trash_mode_sent) {
+        comms_server_send_packet(0x30, NULL, 0);
+        s_trash_mode_sent = true;
+        ESP_LOGI(TAG, "TrashMode sent (late, on first cmd 0x%02X)", cmd);
+    }
+
     switch (cmd) {
     case 0x20: /* StreamStartUdp from Android — cancel crop or initial start */
         ESP_LOGI(TAG, "CMD 0x20: state=%s streaming=%d",
