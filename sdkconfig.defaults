@@ -1,7 +1,9 @@
 # ESP32-CAM Optimization — sdkconfig overrides
 # Applied on top of sdkconfig; run `idf.py reconfigure` to apply
 
-# --- CPU & Compiler ---
+# --- CCache (需要安装并配置 ccache: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/ccache.html) ---
+CONFIG_CCACHE_ENABLE=y
+# --- Compiler ---
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_DISABLE=y
 
@@ -12,8 +14,8 @@ CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0
 CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 
-# --- Camera DMA in PSRAM (修复已合并到 master，启用) ---
-CONFIG_CAMERA_PSRAM_DMA=y
+# --- Camera DMA in PSRAM (master 有修复但 OV5640 1280x720 仍报错，待排查)
+# CONFIG_CAMERA_PSRAM_DMA=y
 
 # --- Instruction Cache 32KB (默认16KB，LVGL+Camera+WiFi 代码密集) ---
 CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y
