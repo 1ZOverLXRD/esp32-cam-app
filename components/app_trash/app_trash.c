@@ -214,6 +214,8 @@ static void try_start_stream(lv_timer_t *t)
 {
     (void)t;
     if (!g_android_connected) {
+        /* Android 断开 → 复位 TrashMode 标志，下次连接能重新发送 */
+        s_trash_mode_sent = false;
         s_wait_timeout++;
         if (s_wait_timeout >= 3000) {  // 10 分钟超时后停止
             ESP_LOGW(TAG, "Android connect timeout (10min)");
