@@ -215,8 +215,8 @@ static void try_start_stream(lv_timer_t *t)
     (void)t;
     if (!g_android_connected) {
         s_wait_timeout++;
-        if (s_wait_timeout >= 300) {
-            ESP_LOGW(TAG, "Android connect timeout");
+        if (s_wait_timeout >= 3000) {  // 10 分钟超时后停止
+            ESP_LOGW(TAG, "Android connect timeout (10min)");
             if (s_wait_android_timer) {
                 lv_timer_del(s_wait_android_timer);
                 s_wait_android_timer = NULL;
