@@ -99,7 +99,7 @@ void discovery_restart(void)
     ESP_LOGI(TAG, "Restarting discovery...");
     if (s_disco_task) {
         s_disco_stop = true;
-        vTaskDelay(pdMS_TO_TICKS(200));  // wait for old task to exit
+        vTaskDelay(pdMS_TO_TICKS(500));  // 等旧任务完全退出
     }
     s_disco_stop = false;
     xTaskCreate(discovery_task, "discovery", 3072, NULL, 4, &s_disco_task);

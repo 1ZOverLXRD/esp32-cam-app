@@ -8,13 +8,21 @@ static lv_obj_t *s_temp_label = NULL;
 static lv_timer_t *s_weather_timer = NULL;
 
 /* 定时器回调：向 Android 请求天气数据 */
+static int s_retry_count = 0;
+static lv_obj_t *s_detail_label = NULL;
+
 static void weather_timer_cb(lv_timer_t *t)
 {
     (void)t;
+    s_retry_count++;
     extern volatile int g_android_connected;
     if (g_android_connected) {
         comms_server_send_packet(0x40, NULL, 0);
         ESP_LOGI(TAG, "WeatherRequest 0x40 sent to Android");
+        if (s_temp_label)
+            lv_label_set_text(s_temp_label, "\u5DF2\u53D1\u9001\uFF0C\u7B49\u5F85\u56DE\u590D...");  // 已发送，等待回复...
+        if (s_detail_label)
+            lv_label_set_text(s_detail_label, "\u6570\u636E\u5305\u5DF2\u53D1\u9001\uFF0C\u7B49\u5F85\u5904\u7406");
         /* 发了一次就停定时器，等收到数据再开或超时后再发 */
         if (s_weather_timer) {
             lv_timer_del(s_weather_timer);
@@ -22,6 +30,11 @@ static void weather_timer_cb(lv_timer_t *t)
         }
     } else {
         ESP_LOGW(TAG, "Android NOT connected (g_android_connected=0), will retry next tick");
+        if (s_detail_label) {
+            char buf[48];
+            snprintf(buf, sizeof(buf), "\u7B49\u5F85Android\u8FDE\u63A5... (\u7B2C%d\u6B21)", s_retry_count);
+            lv_label_set_text(s_detail_label, buf);
+        }
     }
 }
 
@@ -41,14 +54,14 @@ static void on_create(lv_obj_t *parent)
     lv_obj_align(icon, LV_ALIGN_TOP_MID, 0, 15);
 
     s_temp_label = lv_label_create(s_page);
-    lv_label_set_text(s_temp_label, "--\u00B0C");
+    lv_label_set_text(s_temp_label, "\u8BF7\u6C42\u6570\u636E\u5305...");
     lv_obj_set_style_text_color(s_temp_label, lv_color_white(), LV_STATE_DEFAULT);
     lv_obj_align(s_temp_label, LV_ALIGN_CENTER, 0, -10);
 
-    lv_obj_t *detail = lv_label_create(s_page);
-    lv_label_set_text(detail, "\u7B49\u5F85\u6570\u636E...");
-    lv_obj_set_style_text_color(detail, lv_color_make(200, 220, 255), LV_STATE_DEFAULT);
-    lv_obj_align(detail, LV_ALIGN_CENTER, 0, 30);
+    s_detail_label = lv_label_create(s_page);
+    lv_label_set_text(s_detail_label, "\u7B49\u5F85Android\u8FDE\u63A5... (\u7B2C0\u6B21)");
+    lv_obj_set_style_text_color(s_detail_label, lv_color_make(200, 220, 255), LV_STATE_DEFAULT);
+    lv_obj_align(s_detail_label, LV_ALIGN_CENTER, 0, 30);
 
     ESP_LOGI(TAG, "Weather app created, starting retry timer");
 
@@ -87,6 +100,8 @@ static void on_destroy(void)
     }
     s_page = NULL;
     s_temp_label = NULL;
+    s_detail_label = NULL;
+    s_retry_count = 0;
     ESP_LOGI(TAG, "Weather app destroyed");
 }
 
