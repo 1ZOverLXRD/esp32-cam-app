@@ -3,6 +3,7 @@
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "nvs_flash.h"
+#include "../web_config_server/web_config_server.h"
 #include "cam_config.h"
 #include <string.h>
 #include <stdio.h>
@@ -380,8 +381,9 @@ static void wifi_reconnect_last(void)
 
     ESP_LOGI(TAG, "Reconnecting to last WiFi: %s", ssid);
 
-    esp_wifi_set_mode(WIFI_MODE_APSTA);
-    vTaskDelay(pdMS_TO_TICKS(100));
+    /* 关闭 AP + HTTP 服务，切换到纯 STA 模式 */
+    web_config_server_switch_to_sta();
+    vTaskDelay(pdMS_TO_TICKS(200));
 
     wifi_config_t sta_cfg = {
         .sta = { .threshold.authmode = WIFI_AUTH_WPA2_PSK, .sae_pwe_h2e = WPA3_SAE_PWE_BOTH },
@@ -390,7 +392,7 @@ static void wifi_reconnect_last(void)
     strncpy((char *)sta_cfg.sta.password, password, sizeof(sta_cfg.sta.password) - 1);
     esp_wifi_set_config(WIFI_IF_STA, &sta_cfg);
     esp_wifi_connect();
-    ESP_LOGI(TAG, "Reconnect initiated, will auto-switch on DHCP OK");
+    ESP_LOGI(TAG, "Reconnect initiated, AP closed, STA connecting...");
 }
 
 /* ── Camera Config 编辑 ── */

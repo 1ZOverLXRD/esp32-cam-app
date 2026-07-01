@@ -19,8 +19,8 @@ extern bool s_wifi_connected;
 extern char s_sta_ip[16];
 extern void update_wifi_info(void);
 
-/* 切换纯 STA（在独立任务上下文执行，有充足栈空间） */
-static void do_sta_switch(void)
+/* 切换纯 STA（供外部调用，如 Settings 的 "Reconnect Last"） */
+void web_config_server_switch_to_sta(void)
 {
     ESP_LOGI(TAG, "Switching to pure STA mode...");
 
@@ -54,7 +54,7 @@ static void sta_switch_delayed_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(200));
     }
     /* 直接在任务上下文切换（栈充足），不再经过定时器（Tmr Svc 栈小） */
-    do_sta_switch();
+    web_config_server_switch_to_sta();
     vTaskDelete(NULL);
 }
 
