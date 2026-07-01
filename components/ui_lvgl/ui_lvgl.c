@@ -22,8 +22,10 @@ void ui_lvgl_unlock(void)
         xSemaphoreGive(s_lvgl_mutex);
 }
 
-/* 缓冲行数：双缓冲 20 行刚好占满 DMA 池 */
+/* 双缓冲 20 行刚好占满 DMA 池，避免 SPI 传输等待渲染 */
+#define BUF_ROWS 20
 lv_color_t *s_buf1 = NULL;
+lv_color_t *s_buf2 = NULL;
 
 static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_p)
 {
@@ -60,16 +62,19 @@ esp_err_t ui_lvgl_init(void)
 
     lv_init();
 
-    size_t buf_size = LCD_WIDTH * LCD_HEIGHT * sizeof(lv_color_t);  // 全屏缓冲
-    s_buf1 = heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM);  // PSRAM
+    size_t buf_size = LCD_WIDTH * BUF_ROWS * sizeof(lv_color_t);  // 320×20×2 = 12.8KB
+    s_buf1 = heap_caps_malloc(buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    s_buf2 = heap_caps_malloc(buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
 
-    if (!s_buf1) {
-        ESP_LOGE(TAG, "Failed to allocate full-screen buffer");
+    if (!s_buf1 || !s_buf2) {
+        ESP_LOGE(TAG, "Failed to allocate display buffers");
+        if (s_buf1) free(s_buf1);
+        if (s_buf2) free(s_buf2);
         return ESP_ERR_NO_MEM;
     }
 
     static lv_disp_draw_buf_t draw_buf;
-    lv_disp_draw_buf_init(&draw_buf, s_buf1, NULL, LCD_WIDTH * LCD_HEIGHT);
+    lv_disp_draw_buf_init(&draw_buf, s_buf1, s_buf2, LCD_WIDTH * BUF_ROWS);
 
     static lv_disp_drv_t disp_drv;
     lv_disp_drv_init(&disp_drv);
@@ -77,7 +82,7 @@ esp_err_t ui_lvgl_init(void)
     disp_drv.ver_res = LCD_HEIGHT;
     disp_drv.flush_cb = lvgl_flush_cb;
     disp_drv.draw_buf = &draw_buf;
-    disp_drv.full_refresh = 1;  // 整帧刷新，消除淡入时带状闪烁
+    disp_drv.full_refresh = 0;  // 双缓冲部分刷新，消除 app 切换割裂
     s_disp = lv_disp_drv_register(&disp_drv);
 
     xTaskCreatePinnedToCore(lvgl_tick_task, "lv_tick", 2048, NULL, 1, NULL, 1);
