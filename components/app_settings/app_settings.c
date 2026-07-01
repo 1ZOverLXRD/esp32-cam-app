@@ -522,10 +522,10 @@ static void on_create(lv_obj_t *parent)
         const char **items = SUB_ITEMS[i];
         int count = SUB_COUNTS[i];
 
-        /* WiFi Info 段：断开状态固定3项，连接后由 update_wifi_info 处理 */
+        /* WiFi Info 段：断开状态固定4项（含 Reconnect Last），连接后由 update_wifi_info 处理 */
         if (i == WIFI_SEC_IDX) {
             items = WIFI_ITEMS_DISCONNECTED;
-            count = 3;
+            count = 4;
         }
 
         sec->sub_count = count;
