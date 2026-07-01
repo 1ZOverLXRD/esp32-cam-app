@@ -242,11 +242,7 @@ static void try_start_stream(lv_timer_t *t)
 
     /* 防止与 on_trash_cmd(0x20) 竞态 — 如果已经在推流则跳过 */
     if (s_streaming) {
-        if (s_wait_android_timer) {
-            lv_timer_del(s_wait_android_timer);
-            s_wait_android_timer = NULL;
-        }
-        return;
+        return;  // 不删定时器，保留用于断开后复位 s_trash_mode_sent
     }
 
     if (s_wait_android_timer) {
