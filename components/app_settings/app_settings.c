@@ -10,7 +10,7 @@
 #include <string.h>
 #include <stdio.h>
 
-static const char *TAG = "APP_SETTINGS";
+static const char *TAG = "设置应用";
 
 /* 外部标志：通知ui_main.c不要触发退出 */
 extern volatile bool s_app_handled;
@@ -43,24 +43,24 @@ static int s_sub_selected = 0;
 
 /* 表头名称 */
 static const char *HEADER_NAMES[SECTION_COUNT] = {
-    "Camera Config",
-    "WiFi Info",
-    "Joystick Report",
+    "相机配置",
+    "WiFi 信息",
+    "摇杆报告",
 };
 
 /* 各段子项 */
 #define CAM_CFG_COUNT 8
 static const char *CAM_CFG_NAMES[CAM_CFG_COUNT] = {
-    "Res", "Qual", "Mirror", "Flip",
-    "Bright", "Contrast", "WB", "AE Lv"
+    "分辨率", "质量", "镜像", "翻转",
+    "亮度", "对比度", "WB", "AE 值"
 };
 static cam_config_t s_cam_cfg;
 static int s_editing = -1;  // -1=不在编辑, >=0=编辑中的索引
 /* WiFi Info 段：断开 vs 连接 */
-static const char *WIFI_ITEMS_DISCONNECTED[] = {"Status:  AP Mode / 192.168.4.1",
-                                                 "SSID:    COLDFISHESP32",
-                                                 "Password: 12060606",
-                                                 "Reconnect Last"};
+static const char *WIFI_ITEMS_DISCONNECTED[] = {"状态: 热点模式 / 192.168.4.1",
+                                                 "网络: COLDFISHESP32",
+                                                 "密码: 12060606",
+                                                 "重连上次"};
 static const char *JOY_ITEMS[] = {"X:0.00  Y:0.00"};
 
 static const char **SUB_ITEMS[SECTION_COUNT] = {
@@ -268,7 +268,7 @@ void update_wifi_info(void)
         /* 更新第0项文字和Y位置 */
         if (sec->sub_items[0]) {
             lv_obj_t *lbl = lv_obj_get_child(sec->sub_items[0], 0);
-            if (lbl) lv_label_set_text(lbl, "Status:  Connected");
+            if (lbl) lv_label_set_text(lbl, "状态: 已连接");
             int hy = lv_obj_get_y(sec->header);
             lv_obj_set_y(sec->sub_items[0], hy + HEADER_H + ITEM_GAP);
             lv_obj_clear_flag(sec->sub_items[0], LV_OBJ_FLAG_HIDDEN);
@@ -369,11 +369,11 @@ static void reconnect_timeout_cb(TimerHandle_t t)
     lv_obj_t *lbl = lv_obj_get_child(s_sections[WIFI_SEC_IDX].sub_items[3], 0);
     if (!lbl) return;
     if (s_wifi_connected) {
-        lv_label_set_text(lbl, "Connected");
-        ESP_LOGI(TAG, "Reconnect succeeded");
+        lv_label_set_text(lbl, "已连接");
+        ESP_LOGI(TAG, "重连成功");
     } else {
         s_reconnect_abort = true;
-        lv_label_set_text(lbl, "Timeout");
+        lv_label_set_text(lbl, "超时");
         ESP_LOGW(TAG, "Reconnect timeout, falling back to AP");
     }
 }
@@ -384,12 +384,12 @@ static void wifi_reconnect_last(void)
     nvs_handle_t nvs;
     char ssid[33] = {0}, password[65] = {0};
     if (nvs_open("wifi_last", NVS_READONLY, &nvs) != ESP_OK) {
-        ESP_LOGW(TAG, "No saved WiFi credentials");
+        ESP_LOGW(TAG, "无保存的 WiFi 凭据");
         return;
     }
     size_t len = sizeof(ssid);
     if (nvs_get_str(nvs, "ssid", ssid, &len) != ESP_OK || strlen(ssid) == 0) {
-        ESP_LOGW(TAG, "No SSID in NVS");
+        ESP_LOGW(TAG, "无 WiFi 名称");
         nvs_close(nvs);
         return;
     }
@@ -399,10 +399,10 @@ static void wifi_reconnect_last(void)
 
     ESP_LOGI(TAG, "Reconnecting to last WiFi: %s", ssid);
 
-    /* 重置中止标志 + 更新 TFT 显示 "Connecting..." */
+    /* 重置中止标志 + 更新 TFT 显示 "连接中..." */
     s_reconnect_abort = false;
     lv_label_set_text(lv_obj_get_child(s_sections[WIFI_SEC_IDX].sub_items[3], 0),
-                      "Connecting...");
+                      "连接中...");
 
     /* 关闭 AP + HTTP 服务，切换到纯 STA 模式 */
     web_config_server_switch_to_sta();
@@ -494,7 +494,7 @@ static void update_cam_cfg_display(void)
             break;
         case 2: case 3:
             snprintf(buf, sizeof(buf), "%s: %s", CAM_CFG_NAMES[i],
-                     (i == 2 ? s_cam_cfg.mirror : s_cam_cfg.flip) ? "ON" : "OFF");
+                     (i == 2 ? s_cam_cfg.mirror : s_cam_cfg.flip) ? "ON" : "关");
             break;
         case 4: case 5: case 7:
             snprintf(buf, sizeof(buf), "%s: %+d", CAM_CFG_NAMES[i],
@@ -502,9 +502,9 @@ static void update_cam_cfg_display(void)
                               i == 5 ? s_cam_cfg.contrast : s_cam_cfg.ae_level));
             break;
         case 6: {
-            const char *w = s_cam_cfg.wb_mode == 0 ? "Auto" :
-                            s_cam_cfg.wb_mode == 1 ? "Sunny" :
-                            s_cam_cfg.wb_mode == 2 ? "Cloudy" : "Fluo";
+            const char *w = s_cam_cfg.wb_mode == 0 ? "自动" :
+                            s_cam_cfg.wb_mode == 1 ? "晴天" :
+                            s_cam_cfg.wb_mode == 2 ? "多云" : "荧光灯";
             snprintf(buf, sizeof(buf), "%s: %s", CAM_CFG_NAMES[i], w);
             break;
         }
@@ -532,7 +532,7 @@ static void on_create(lv_obj_t *parent)
     lv_obj_set_scrollbar_mode(s_page, LV_SCROLLBAR_MODE_OFF);
 
     lv_obj_t *title = lv_label_create(s_page);
-    lv_label_set_text(title, "Settings");
+    lv_label_set_text(title, "设置");
     lv_obj_set_style_text_color(title, lv_color_white(), LV_STATE_DEFAULT);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 12);
 
@@ -677,7 +677,7 @@ static void on_joystick(joystick_evt_t evt)
             break;
         }
         if (top == UI_STATE_SUB) {
-            /* WiFi Info 段：选中 "Reconnect Last" 时按 PRESS 触发重连 */
+            /* WiFi Info 段：选中 "重连上次" 时按 PRESS 触发重连 */
             if (s_selected == WIFI_SEC_IDX && s_sub_selected == s_sections[WIFI_SEC_IDX].sub_count - 1) {
                 wifi_reconnect_last();
                 s_app_handled = true;
@@ -715,7 +715,7 @@ static void on_joystick(joystick_evt_t evt)
 }
 
 app_t app_settings = {
-    .name = "Settings",
+    .name = "设置",
     .icon = "S",
     .color = 0x00B894,
     .on_create = on_create,

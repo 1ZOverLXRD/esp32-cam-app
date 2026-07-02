@@ -12,7 +12,7 @@
 #include "comms_server.h"
 #include "cam_config.h"
 
-static const char *TAG = "APP_CAMERA";
+static const char *TAG = "相机应用";
 
 extern volatile bool s_app_handled;
 
@@ -32,7 +32,7 @@ static const char *get_sta_ip_str(void)
     /* 先分类网口（if_key 全大写：WIFI_STA_DEF / WIFI_AP_DEF） */
     for (esp_netif_t *n = esp_netif_next(NULL); n; n = esp_netif_next(n)) {
         const char *key = esp_netif_get_ifkey(n);
-        if (key && strstr(key, "STA"))  sta = n;
+        if (key && strstr(key, "工作站"))  sta = n;
         if (key && strstr(key, "AP"))   ap  = n;
     }
     /* 优先返回 STA IP */
@@ -319,24 +319,24 @@ static void try_start_stream(lv_timer_t *t)
         s_wait_android_timer = NULL;
     }
     s_wait_timeout = 0;
-    if (s_hint) lv_label_set_text(s_hint, "Android OK, starting...");
+    if (s_hint) lv_label_set_text(s_hint, "Android 已连，启动...");
 
     if (init_camera(FRAMESIZE_HD, PIXFORMAT_JPEG) != ESP_OK) {
-        if (s_hint) lv_label_set_text(s_hint, "Camera init failed");
-        ESP_LOGE(TAG, "Camera init failed");
+        if (s_hint) lv_label_set_text(s_hint, "相机初始化失败");
+        ESP_LOGE(TAG, "相机初始化失败");
         return;
     }
     apply_cam_config();
 
     s_streaming = true;
     s_tft_mode  = false;
-    if (s_hint) lv_label_set_text(s_hint, "Long PRESS exit");
+    if (s_hint) lv_label_set_text(s_hint, "长按退出");
     if (s_ip_label) lv_label_set_text(s_ip_label, get_sta_ip_str());
 
     s_udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (s_udp_fd < 0) {
-        ESP_LOGE(TAG, "UDP socket failed");
-        if (s_hint) lv_label_set_text(s_hint, "UDP socket failed");
+        ESP_LOGE(TAG, "UDP 套接字失败");
+        if (s_hint) lv_label_set_text(s_hint, "UDP 套接字失败");
         return;
     }
 
@@ -360,7 +360,7 @@ static void enter_stream_mode(void)
 
     /* 显示等待提示 */
     s_hint = lv_label_create(s_page);
-    lv_label_set_text(s_hint, "Connect Android client...");
+    lv_label_set_text(s_hint, "连接 Android 客户端...");
     lv_obj_set_style_text_color(s_hint, lv_color_make(200, 200, 100), LV_STATE_DEFAULT);
     lv_obj_set_style_text_align(s_hint, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
     lv_obj_align(s_hint, LV_ALIGN_CENTER, 0, 0);
@@ -385,7 +385,7 @@ static void enter_tft_mode(void)
     if (s_tft_btn)   { lv_obj_del(s_tft_btn);   s_tft_btn   = NULL; }
 
     if (init_camera(FRAMESIZE_QVGA, PIXFORMAT_RGB565) != ESP_OK) {
-        if (s_hint) lv_label_set_text(s_hint, "Camera init failed");
+        if (s_hint) lv_label_set_text(s_hint, "相机初始化失败");
         return;
     }
     apply_cam_config();
@@ -393,9 +393,9 @@ static void enter_tft_mode(void)
     s_streaming = false;
     s_tft_mode  = true;
 
-    if (s_hint) lv_label_set_text(s_hint, "TFT Display");
+    if (s_hint) lv_label_set_text(s_hint, "TFT 显示");
     s_cam_timer = lv_timer_create(cam_timer_cb, 50, NULL);
-    ESP_LOGI(TAG, "TFT mode started");
+    ESP_LOGI(TAG, "本地模式已启动");
 }
 
 /* ===================== 停止摄像头 ===================== */
@@ -419,7 +419,7 @@ static void stop_camera(void)
     s_tft_mode  = false;
     s_stream_abort = false;
     s_frame_id  = 0;
-    ESP_LOGI(TAG, "Camera stopped");
+    ESP_LOGI(TAG, "相机已停止");
 }
 
 /* ===================== 重建模式选择 UI ===================== */
@@ -432,7 +432,7 @@ static void rebuild_mode_ui(void)
     s_focus_idx = FOCUS_STREAM;
 
     lv_obj_t *title = lv_label_create(s_page);
-    lv_label_set_text(title, "Camera");
+    lv_label_set_text(title, "相机");
     lv_obj_set_style_text_color(title, lv_color_white(), LV_STATE_DEFAULT);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 12);
 
@@ -446,7 +446,7 @@ static void rebuild_mode_ui(void)
     lv_obj_align(s_stream_btn, LV_ALIGN_CENTER, 0, -40);
     lv_obj_clear_flag(s_stream_btn, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_t *slbl = lv_label_create(s_stream_btn);
-    lv_label_set_text(slbl, "Stream to Android");
+    lv_label_set_text(slbl, "推流到 Android");
     lv_obj_center(slbl);
 
     /* TFT 按钮 */
@@ -457,7 +457,7 @@ static void rebuild_mode_ui(void)
     lv_obj_align(s_tft_btn, LV_ALIGN_CENTER, 0, 30);
     lv_obj_clear_flag(s_tft_btn, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_t *tlbl = lv_label_create(s_tft_btn);
-    lv_label_set_text(tlbl, "Local TFT Display");
+    lv_label_set_text(tlbl, "本地屏幕显示");
     lv_obj_center(tlbl);
 
     s_hint = lv_label_create(s_page);
@@ -494,7 +494,7 @@ static void on_create(lv_obj_t *parent)
     /* 确保 STA 网口的 DHCP 客户端在运行 */
     for (esp_netif_t *n = esp_netif_next(NULL); n; n = esp_netif_next(n)) {
         const char *key = esp_netif_get_ifkey(n);
-        if (!key || !strstr(key, "STA")) continue;
+        if (!key || !strstr(key, "工作站")) continue;
         esp_netif_dhcp_status_t s;
         if (esp_netif_dhcpc_get_status(n, &s) == ESP_OK && s == ESP_NETIF_DHCP_STOPPED) {
             esp_netif_dhcpc_start(n);
@@ -514,7 +514,7 @@ static void on_destroy(void)
     if (s_tft_btn)   { lv_obj_del(s_tft_btn);   s_tft_btn   = NULL; }
     s_hint = NULL;
     s_page = NULL;
-    ESP_LOGI(TAG, "Camera app destroyed");
+    ESP_LOGI(TAG, "相机应用已销毁");
 }
 
 static void on_joystick(joystick_evt_t evt)
@@ -542,10 +542,10 @@ static void on_joystick(joystick_evt_t evt)
             break;
         case JOY_EVT_PRESS:
             if (s_focus_idx == FOCUS_STREAM) {
-                ESP_LOGI(TAG, "Selected: Stream mode");
+                ESP_LOGI(TAG, "已选: 推流模式");
                 enter_stream_mode();
             } else {
-                ESP_LOGI(TAG, "Selected: TFT mode");
+                ESP_LOGI(TAG, "已选: 本地模式");
                 enter_tft_mode();
             }
             break;
@@ -555,7 +555,7 @@ static void on_joystick(joystick_evt_t evt)
 }
 
 app_t app_camera = {
-    .name        = "Camera",
+    .name        = "相机",
     .icon        = "C",
     .color       = 0x6C5CE7,
     .on_create   = on_create,

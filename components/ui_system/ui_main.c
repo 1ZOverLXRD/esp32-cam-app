@@ -18,7 +18,7 @@ static void set_opa(lv_obj_t *obj, int16_t v)
 }
 
 #define APP_COUNT 4
-static const char *APP_NAMES[APP_COUNT] = {"Settings", "Trash", "Weather", "Camera"};
+static const char *APP_NAMES[APP_COUNT] = {"设置", "垃圾", "天气", "相机"};
 static const uint32_t APP_COLORS[APP_COUNT] = {
     0x00B894, 0xE17055, 0x0984E3, 0x6C5CE7,
 };

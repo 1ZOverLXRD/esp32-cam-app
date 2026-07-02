@@ -1,0 +1,80 @@
+# Translation mapping: English → Chinese for ESP32 UI
+# Format: English | Chinese
+AE Lv | AE 值
+APP_CAMERA | 相机应用
+APP_SETTINGS | 设置应用
+APP_TRASH | 垃圾应用
+APP_WEATHER | 天气应用
+Auto | 自动
+Bright | 亮度
+Camera | 相机
+Camera Config | 相机配置
+Camera app destroyed | 相机应用已销毁
+Camera init failed | 相机初始化失败
+Camera stopped | 相机已停止
+Cloudy | 多云
+Comms OK | 通信正常
+Connect Android client... | 连接 Android 客户端...
+Connected | 已连接
+Connecting... | 连接中...
+Contrast | 对比度
+FETCHING | 获取中
+Fetching... | 获取中...
+Flip | 翻转
+Fluo | 荧光灯
+IDLE | 空闲
+Inference failed | 识别失败
+Init Joystick... | 初始化摇杆...
+Init LCD... | 初始化屏幕...
+Init LVGL... | 初始化 LVGL...
+Init UI menu... | 初始化菜单...
+Init WiFi AP... | 初始化 WiFi 热点...
+Init comms... | 初始化通信...
+Init web config... | 初始化网页配置...
+Joystick OK | 摇杆正常
+Joystick Report | 摇杆报告
+LAUNCHER | 启动器
+LCD OK | 屏幕正常
+LVGL OK | LVGL 正常
+Launcher initialized | 启动器已初始化
+Local TFT Display | 本地屏幕显示
+Long PRESS exit | 长按退出
+MAIN | 主程序
+Main alive | 主程序运行中
+Mirror | 镜像
+No SSID in NVS | 无 WiFi 名称
+No saved WiFi credentials | 无保存的 WiFi 凭据
+OFF | 关
+Password: 12060606 | 密码: 12060606
+Qual | 质量
+RESULT | 结果
+Ready for capture | 准备拍照
+Reconnect Last | 重连上次
+Reconnect succeeded | 重连成功
+Res | 分辨率
+SSID:    COLDFISHESP32 | 网络: COLDFISHESP32
+STA | 工作站
+STREAMING | 推流中
+Selected: Stream mode | 已选: 推流模式
+Selected: TFT mode | 已选: 本地模式
+Settings | 设置
+Start joystick poll... | 启动摇杆轮询...
+Status:  AP Mode / 192.168.4.1 | 状态: 热点模式 / 192.168.4.1
+Status:  Connected | 状态: 已连接
+Stream started | 推流已启动
+Stream stopped | 推流已停止
+Stream to Android | 推流到 Android
+Sunny | 晴天
+TFT Display | TFT 显示
+TFT mode started | 本地模式已启动
+Timeout | 超时
+Trash Detect | 垃圾检测
+TrashMode sent to Android | 垃圾模式已发送到 Android
+UDP socket failed | UDP 套接字失败
+UI menu OK | 菜单正常
+Weather app destroyed | 天气应用已销毁
+WeatherRequest 0x40 sent to Android | 天气请求已发送到 Android
+WiFi AP started: | WiFi 热点已启动:
+WiFi Info | WiFi 信息
+WiFi OK | WiFi 正常
+X:0.00  Y:0.00 | X:0.00  Y:0.00

@@ -10,7 +10,7 @@
 #include "sys/socket.h"
 #include "lwip/inet.h"
 
-static const char *TAG = "APP_TRASH";
+static const char *TAG = "垃圾应用";
 
 /* ── State ── */
 typedef enum {
@@ -67,10 +67,10 @@ static void apply_cam_config(void)
 /* ── State → name map for logging ── */
 static const char *state_name(trash_state_t st) {
     switch (st) {
-        case TRASH_IDLE:      return "IDLE";
-        case TRASH_STREAMING: return "STREAMING";
-        case TRASH_FETCHING:  return "FETCHING";
-        case TRASH_RESULT:    return "RESULT";
+        case TRASH_IDLE:      return "空闲";
+        case TRASH_STREAMING: return "推流中";
+        case TRASH_FETCHING:  return "获取中";
+        case TRASH_RESULT:    return "结果";
         default:              return "?";
     }
 }
@@ -179,14 +179,14 @@ static void start_streaming(void)
 
     s_udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (s_udp_fd < 0) {
-        ESP_LOGE(TAG, "UDP socket failed");
+        ESP_LOGE(TAG, "UDP 套接字失败");
         esp_camera_deinit();
         return;
     }
 
     xTaskCreate(stream_task, "trash_stream", 4096, NULL, 4, &s_stream_task);
     s_frame_id = 0;
-    ESP_LOGI(TAG, "Stream started");
+    ESP_LOGI(TAG, "推流已启动");
 }
 
 static void stop_streaming(void)
@@ -206,7 +206,7 @@ static void stop_streaming(void)
     }
     esp_camera_deinit();
     s_streaming = false;
-    ESP_LOGI(TAG, "Stream stopped");
+    ESP_LOGI(TAG, "推流已停止");
 }
 
 /* ── Wait for Android then send TrashMode and start stream ── */
@@ -232,9 +232,9 @@ static void try_start_stream(lv_timer_t *t)
     if (!s_trash_mode_sent) {
         comms_server_send_packet(0x30, NULL, 0);
         s_trash_mode_sent = true;
-        ESP_LOGI(TAG, "TrashMode sent to Android");
+        ESP_LOGI(TAG, "垃圾模式已发送到 Android");
         if (s_status_label)
-            lv_label_set_text(s_status_label, "Trash mode sent, waiting for UDP...");
+            lv_label_set_text(s_status_label, "垃圾模式已发，等待 UDP...");
     }
 
     /* 等 Android 发来 StreamStartUdp 拿到端口后再开相机推流 */
@@ -252,7 +252,7 @@ static void try_start_stream(lv_timer_t *t)
 
     start_streaming();
     if (s_status_label)
-        lv_label_set_text(s_status_label, "Ready for capture");
+        lv_label_set_text(s_status_label, "准备拍照");
     ESP_LOGI(TAG, "try_start_stream done -> STREAMING");
 }
 
@@ -276,7 +276,7 @@ static void on_trash_cmd(uint8_t cmd, uint16_t seq,
         if (s_state != TRASH_STREAMING) {
             start_streaming();
             if (s_status_label)
-                lv_label_set_text(s_status_label, "Ready for capture");
+                lv_label_set_text(s_status_label, "准备拍照");
         }
         break;
 
@@ -286,7 +286,7 @@ static void on_trash_cmd(uint8_t cmd, uint16_t seq,
         stop_streaming();
         s_state = TRASH_FETCHING;
         if (s_status_label)
-            lv_label_set_text(s_status_label, "Fetching...");
+            lv_label_set_text(s_status_label, "获取中...");
         if (s_detail_label)
             lv_label_set_text(s_detail_label, "");
         break;
@@ -299,7 +299,7 @@ static void on_trash_cmd(uint8_t cmd, uint16_t seq,
 
         if (count == 0) {
             if (s_status_label)
-                lv_label_set_text(s_status_label, "Inference failed");
+                lv_label_set_text(s_status_label, "识别失败");
             if (s_detail_label)
                 lv_label_set_text(s_detail_label, "");
             break;
@@ -324,7 +324,7 @@ static void on_trash_cmd(uint8_t cmd, uint16_t seq,
         }
 
         if (s_status_label)
-            lv_label_set_text(s_status_label, "Trash Detect");
+            lv_label_set_text(s_status_label, "垃圾检测");
         if (s_detail_label)
             lv_label_set_text(s_detail_label, buf);
         ESP_LOGI(TAG, "TrashResult displayed: %s", buf);
@@ -346,7 +346,7 @@ static const char *get_sta_ip_str(void)
     esp_netif_t *ap  = NULL;
     for (esp_netif_t *n = esp_netif_next(NULL); n; n = esp_netif_next(n)) {
         const char *key = esp_netif_get_ifkey(n);
-        if (key && strstr(key, "STA"))  sta = n;
+        if (key && strstr(key, "工作站"))  sta = n;
         if (key && strstr(key, "AP"))   ap  = n;
     }
     if (sta) {
@@ -399,7 +399,7 @@ static void on_create(lv_obj_t *parent)
 
     /* Status label (center) */
     s_status_label = lv_label_create(s_page);
-    lv_label_set_text(s_status_label, "Connecting...");
+    lv_label_set_text(s_status_label, "连接中...");
     lv_obj_set_style_text_color(s_status_label, lv_color_make(200, 200, 200), LV_STATE_DEFAULT);
     lv_obj_set_style_text_align(s_status_label, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
     lv_obj_align(s_status_label, LV_ALIGN_CENTER, 0, -20);
@@ -413,7 +413,7 @@ static void on_create(lv_obj_t *parent)
 
     /* Hint at bottom */
     lv_obj_t *hint = lv_label_create(s_page);
-    lv_label_set_text(hint, "Trash Detect");
+    lv_label_set_text(hint, "垃圾检测");
     lv_obj_set_style_text_color(hint, lv_color_make(150, 150, 180), LV_STATE_DEFAULT);
     lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -10);
 
@@ -456,14 +456,14 @@ static void on_joystick(joystick_evt_t evt)
         start_streaming();
         comms_server_send_packet(0x31, NULL, 0); /* ResumeCapture → Android */
         if (s_status_label)
-            lv_label_set_text(s_status_label, "Ready for capture");
+            lv_label_set_text(s_status_label, "准备拍照");
         if (s_detail_label)
             lv_label_set_text(s_detail_label, "");
     }
 }
 
 app_t app_trash = {
-    .name = "Trash Detect",
+    .name = "垃圾检测",
     .icon = "T",
     .color = 0xE17055,
     .on_create = on_create,

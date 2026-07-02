@@ -2,7 +2,7 @@
 #include "esp_log.h"
 #include "comms_server.h"
 
-static const char *TAG = "APP_WEATHER";
+static const char *TAG = "天气应用";
 static lv_obj_t *s_page = NULL;
 static lv_obj_t *s_temp_label = NULL;
 static lv_timer_t *s_weather_timer = NULL;
@@ -18,7 +18,7 @@ static void weather_timer_cb(lv_timer_t *t)
     extern volatile int g_android_connected;
     if (g_android_connected) {
         comms_server_send_packet(0x40, NULL, 0);
-        ESP_LOGI(TAG, "WeatherRequest 0x40 sent to Android");
+        ESP_LOGI(TAG, "天气请求已发送到 Android");
         if (s_temp_label)
             lv_label_set_text(s_temp_label, "\u5DF2\u53D1\u9001\uFF0C\u7B49\u5F85\u56DE\u590D...");  // 已发送，等待回复...
         if (s_detail_label)
@@ -102,7 +102,7 @@ static void on_destroy(void)
     s_temp_label = NULL;
     s_detail_label = NULL;
     s_retry_count = 0;
-    ESP_LOGI(TAG, "Weather app destroyed");
+    ESP_LOGI(TAG, "天气应用已销毁");
 }
 
 app_t app_weather = {

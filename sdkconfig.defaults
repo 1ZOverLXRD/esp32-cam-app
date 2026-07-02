@@ -1,8 +1,6 @@
 # ESP32-CAM Optimization — sdkconfig overrides
 # Applied on top of sdkconfig; run `idf.py reconfigure` to apply
 
-# --- CCache (需要安装并配置 ccache: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/ccache.html) ---
-CONFIG_CCACHE_ENABLE=y
 # --- Compiler ---
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_DISABLE=y
