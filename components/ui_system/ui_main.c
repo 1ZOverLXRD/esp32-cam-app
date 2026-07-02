@@ -265,7 +265,7 @@ void ui_main_menu_init(void)
 
     /* 底部启动标签 */
     lv_obj_t *launch = lv_label_create(lv_scr_act());
-    lv_label_set_text(launch, "Launch");
+    lv_label_set_text(launch, "启动");
     lv_obj_align(launch, LV_ALIGN_BOTTOM_MID, 0, -10);
     lv_obj_set_style_text_color(launch, lv_color_make(180, 180, 180), LV_STATE_DEFAULT);
 
@@ -339,7 +339,7 @@ static void open_current_app(void)
         lv_obj_clear_flag(ov, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 
         lv_obj_t *warn = lv_label_create(ov);
-        lv_label_set_text(warn, LV_SYMBOL_WARNING "\nNo WiFi\n\nOpen browser to\nhttp://192.168.4.1\n\nConfigure WiFi\nto use this app");
+        lv_label_set_text(warn, LV_SYMBOL_WARNING "\n无 WiFi\n\n打开浏览器访问\nhttp://192.168.4.1\n\n配置 WiFi\n以使用此应用");
         lv_obj_set_style_text_color(warn, lv_color_make(200, 200, 200), LV_STATE_DEFAULT);
         lv_obj_set_style_text_align(warn, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
         lv_obj_center(warn);
@@ -354,7 +354,7 @@ static void open_current_app(void)
         lv_obj_center(label);
 
         lv_obj_t *hint = lv_label_create(s_app_page);
-        lv_label_set_text(hint, "Press to exit");
+        lv_label_set_text(hint, "按退出");
         lv_obj_set_style_text_color(hint, lv_color_make(200, 200, 200), LV_STATE_DEFAULT);
         lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -10);
     }

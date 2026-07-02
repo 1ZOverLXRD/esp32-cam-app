@@ -88,13 +88,13 @@ esp_err_t ui_lvgl_init(void)
     disp_drv.full_refresh = 0;  // 双缓冲部分刷新，消除 app 切换割裂
     s_disp = lv_disp_drv_register(&disp_drv);
 
-    /* 设置默认字体为 SimHei 中文 */
-    lv_theme_t *theme = lv_disp_get_theme(s_disp);
-    if (theme) {
-        theme->font_small = &cn_font_16;
-        theme->font_normal = &cn_font_16;
-        theme->font_large = &cn_font_16;
-    }
+    /* 用 SimHei 中文重新初始化主题 — 替换已烘焙的 font_small/normal/large 样式 */
+    lv_theme_t *theme = lv_theme_default_init(s_disp,
+        lv_palette_main(LV_PALETTE_BLUE),
+        lv_palette_main(LV_PALETTE_CYAN),
+        LV_THEME_DEFAULT_DARK,
+        &cn_font_16);
+    if (theme) lv_disp_set_theme(s_disp, theme);
 
     xTaskCreatePinnedToCore(lvgl_tick_task, "lv_tick", 2048, NULL, 1, NULL, 1);
 
