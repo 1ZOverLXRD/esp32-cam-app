@@ -27,6 +27,9 @@ void ui_lvgl_unlock(void)
 lv_color_t *s_buf1 = NULL;
 lv_color_t *s_buf2 = NULL;
 
+/* 引入中文字体 */
+LV_FONT_DECLARE(cn_font_16);
+
 static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_p)
 {
     esp_lcd_panel_handle_t panel = lcd_get_panel_handle();
@@ -84,6 +87,14 @@ esp_err_t ui_lvgl_init(void)
     disp_drv.draw_buf = &draw_buf;
     disp_drv.full_refresh = 0;  // 双缓冲部分刷新，消除 app 切换割裂
     s_disp = lv_disp_drv_register(&disp_drv);
+
+    /* 设置默认字体为 SimHei 中文 */
+    lv_theme_t *theme = lv_disp_get_theme(s_disp);
+    if (theme) {
+        theme->font_small = &cn_font_16;
+        theme->font_normal = &cn_font_16;
+        theme->font_large = &cn_font_16;
+    }
 
     xTaskCreatePinnedToCore(lvgl_tick_task, "lv_tick", 2048, NULL, 1, NULL, 1);
 
