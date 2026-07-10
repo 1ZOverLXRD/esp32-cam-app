@@ -4,6 +4,9 @@
 #include "esp_log.h"
 #include <string.h>
 
+/* 引入中文字体 */
+LV_FONT_DECLARE(cn_font_16);
+
 /* APP 实例（由各 app_xxx.c 定义） */
 extern app_t app_settings;
 extern app_t app_weather;
@@ -165,8 +168,8 @@ static lv_obj_t *create_card(int real_idx)
     lv_obj_t *name = lv_label_create(card);
     lv_label_set_text(name, APP_NAMES[real_idx]);
     lv_obj_set_style_text_color(name, lv_color_white(), LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(name, lv_font_default(), LV_STATE_DEFAULT);
-    lv_obj_align(name, LV_ALIGN_CENTER, 0, 0);
+        lv_obj_set_style_text_font(name, &cn_font_16, LV_STATE_DEFAULT);
+        lv_obj_align(name, LV_ALIGN_CENTER, 0, 0);
 
     return card;
 }

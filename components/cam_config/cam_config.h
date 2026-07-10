@@ -1,6 +1,7 @@
 #pragma once
 #include "stdint.h"
 #include "esp_err.h"
+#include "sensor.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,6 +22,12 @@ extern const cam_config_t CAM_CONFIG_DEFAULT;
 
 void cam_config_load(cam_config_t *cfg);
 esp_err_t cam_config_save(const cam_config_t *cfg);
+
+/* 从 NVS 配置应用到已初始化的传感器 */
+void cam_config_apply(void);
+
+/* 获取 STA 网口 IP（跳过 AP），返回 "0.0.0.0" 占位 */
+const char *cam_config_get_sta_ip(void);
 
 #ifdef __cplusplus
 }

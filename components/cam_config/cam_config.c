@@ -1,6 +1,9 @@
 #include "cam_config.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
+#include "esp_netif.h"
+#include "lwip/inet.h"
+#include "esp_camera.h"
 
 static const char *TAG = "CAM_CFG";
 #define NVS_NS "cam_cfg"
@@ -69,4 +72,56 @@ esp_err_t cam_config_save(const cam_config_t *cfg)
         ESP_LOGE(TAG, "NVS commit failed: %d", err);
     }
     return err;
+}
+
+/* ── 应用 NVS 参数到已初始化的传感器 ── */
+void cam_config_apply(void)
+{
+    cam_config_t cfg;
+    cam_config_load(&cfg);
+    sensor_t *s = esp_camera_sensor_get();
+    if (!s) {
+        ESP_LOGW(TAG, "sensor_get failed, cannot apply config");
+        return;
+    }
+    s->set_hmirror(s, cfg.mirror);
+    s->set_vflip(s, cfg.flip);
+    s->set_exposure_ctrl(s, 1);
+    s->set_aec_value(s, 300);
+    s->set_whitebal(s, 1);
+    s->set_awb_gain(s, 1);
+    if (cfg.brightness != 0) s->set_brightness(s, cfg.brightness);
+    if (cfg.contrast != 0)   s->set_contrast(s, cfg.contrast);
+    if (cfg.wb_mode != 0)    s->set_wb_mode(s, cfg.wb_mode);
+    if (cfg.ae_level != 0)   s->set_ae_level(s, cfg.ae_level);
+    ESP_LOGI(TAG, "Sensor config applied: qual=%u mir=%u flip=%u",
+             cfg.quality, cfg.mirror, cfg.flip);
+}
+
+/* ── 获取 STA 网口 IP（跳过 AP） ── */
+const char *cam_config_get_sta_ip(void)
+{
+    static char buf[16] = "0.0.0.0";
+    esp_netif_t *sta = NULL, *ap = NULL;
+    for (esp_netif_t *n = esp_netif_next(NULL); n; n = esp_netif_next(n)) {
+        const char *key = esp_netif_get_ifkey(n);
+        if (key && strstr(key, "工作站")) sta = n;
+        if (key && strstr(key, "AP"))    ap  = n;
+    }
+    if (sta) {
+        esp_netif_ip_info_t ip;
+        if (esp_netif_get_ip_info(sta, &ip) == ESP_OK && ip.ip.addr != 0) {
+            snprintf(buf, sizeof(buf), IPSTR, IP2STR(&ip.ip));
+            return buf;
+        }
+    }
+    for (esp_netif_t *n = esp_netif_next(NULL); n; n = esp_netif_next(n)) {
+        if (n == ap) continue;
+        esp_netif_ip_info_t ip;
+        if (esp_netif_get_ip_info(n, &ip) == ESP_OK && ip.ip.addr != 0) {
+            snprintf(buf, sizeof(buf), IPSTR, IP2STR(&ip.ip));
+            break;
+        }
+    }
+    return buf;
 }

@@ -4,6 +4,7 @@
 #include "esp_log.h"
 #include "esp_camera.h"
 #include "esp_timer.h"
+#include "esp_netif.h"
 #include "lvgl.h"
 #include "string.h"
 #include "sys/socket.h"
@@ -21,46 +22,12 @@ static lv_obj_t *s_hint = NULL; static lv_obj_t *s_ip_label = NULL;
 static lv_obj_t *s_stream_btn = NULL;
 static lv_obj_t *s_tft_btn = NULL;
 
-#include "esp_netif.h"
-
-/* 只返回 STA/ETH 接口的 IP，跳过 AP（DHCP 服务器模式）避免残留 192.168.4.1 */
-static const char *get_sta_ip_str(void)
-{
-    static char buf[16] = "0.0.0.0";
-    esp_netif_t *sta = NULL;
-    esp_netif_t *ap  = NULL;
-    /* 先分类网口（if_key 全大写：WIFI_STA_DEF / WIFI_AP_DEF） */
-    for (esp_netif_t *n = esp_netif_next(NULL); n; n = esp_netif_next(n)) {
-        const char *key = esp_netif_get_ifkey(n);
-        if (key && strstr(key, "工作站"))  sta = n;
-        if (key && strstr(key, "AP"))   ap  = n;
-    }
-    /* 优先返回 STA IP */
-    if (sta) {
-        esp_netif_ip_info_t ip;
-        if (esp_netif_get_ip_info(sta, &ip) == ESP_OK && ip.ip.addr != 0) {
-            snprintf(buf, sizeof(buf), IPSTR, IP2STR(&ip.ip));
-            return buf;
-        }
-    }
-    /* STA 没有 IP，尝试其他非 AP 网口 */
-    for (esp_netif_t *n = esp_netif_next(NULL); n; n = esp_netif_next(n)) {
-        if (n == ap) continue;
-        esp_netif_ip_info_t ip;
-        if (esp_netif_get_ip_info(n, &ip) == ESP_OK && ip.ip.addr != 0) {
-            snprintf(buf, sizeof(buf), IPSTR, IP2STR(&ip.ip));
-            break;
-        }
-    }
-    return buf;
-}
-
 /* 每 2 秒刷新 IP 标签（STA 连接后自动更新） */
 static void ip_refresh_cb(lv_timer_t *t)
 {
     (void)t;
     if (s_ip_label) {
-        lv_label_set_text(s_ip_label, get_sta_ip_str());
+        lv_label_set_text(s_ip_label, cam_config_get_sta_ip());
     }
 }
 
@@ -265,34 +232,7 @@ static void health_check_cb(lv_timer_t *t)
     stop_camera();
     rebuild_mode_ui();
 }
-
-/* 应用 NVS Camera 参数到传感器 */
-static void apply_cam_config(void)
-{
-    cam_config_t cfg;
-    cam_config_load(&cfg);
-    sensor_t *s = esp_camera_sensor_get();
-    if (!s) {
-        ESP_LOGW(TAG, "sensor_get failed, cannot apply config");
-        return;
-    }
-
-    /* set_framesize / set_quality 跳过：init_camera 已从 NVS 设好 */
-    s->set_hmirror(s, cfg.mirror);
-    s->set_vflip(s, cfg.flip);
-    /* 强制开启自动曝光和白平衡（驱动 init 可能没保证） */
-    s->set_exposure_ctrl(s, 1);
-    s->set_aec_value(s, 300);
-    s->set_whitebal(s, 1);
-    s->set_awb_gain(s, 1);
-    /* 非默认值才写，避免覆盖 sensor init 的优化值 */
-    if (cfg.brightness != 0) s->set_brightness(s, cfg.brightness);
-    if (cfg.contrast != 0)   s->set_contrast(s, cfg.contrast);
-    if (cfg.wb_mode != 0)    s->set_wb_mode(s, cfg.wb_mode);
-    if (cfg.ae_level != 0)   s->set_ae_level(s, cfg.ae_level);
-    ESP_LOGI(TAG, "Sensor config applied: qual=%u mir=%u flip=%u",
-             cfg.quality, cfg.mirror, cfg.flip);
-}
+/* 应用 NVS Camera 参数到传感器（共享函数 cam_config_apply） */
 
 /* 等Android连上 + 收到UDP端口后再真正开摄像头+推流 */
 static int s_wait_timeout = 0;  // 等待超时计数
@@ -326,12 +266,12 @@ static void try_start_stream(lv_timer_t *t)
         ESP_LOGE(TAG, "相机初始化失败");
         return;
     }
-    apply_cam_config();
+    cam_config_apply();
 
     s_streaming = true;
     s_tft_mode  = false;
     if (s_hint) lv_label_set_text(s_hint, "长按退出");
-    if (s_ip_label) lv_label_set_text(s_ip_label, get_sta_ip_str());
+    if (s_ip_label) lv_label_set_text(s_ip_label, cam_config_get_sta_ip());
 
     s_udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (s_udp_fd < 0) {
@@ -366,7 +306,7 @@ static void enter_stream_mode(void)
     lv_obj_align(s_hint, LV_ALIGN_CENTER, 0, 0);
 
     s_ip_label = lv_label_create(s_page);
-    lv_label_set_text(s_ip_label, get_sta_ip_str());
+    lv_label_set_text(s_ip_label, cam_config_get_sta_ip());
     lv_obj_set_style_text_color(s_ip_label, lv_color_make(100, 200, 255), LV_STATE_DEFAULT);
     lv_obj_set_style_text_align(s_ip_label, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
     lv_obj_set_width(s_ip_label, 220);
@@ -388,7 +328,7 @@ static void enter_tft_mode(void)
         if (s_hint) lv_label_set_text(s_hint, "相机初始化失败");
         return;
     }
-    apply_cam_config();
+    cam_config_apply();
 
     s_streaming = false;
     s_tft_mode  = true;
@@ -504,7 +444,7 @@ static void on_create(lv_obj_t *parent)
     }
 
     rebuild_mode_ui();
-    ESP_LOGI(TAG, "Camera app created, STA IP: %s", get_sta_ip_str());
+    ESP_LOGI(TAG, "Camera app created, STA IP: %s", cam_config_get_sta_ip());
 }
 
 static void on_destroy(void)

@@ -4,11 +4,28 @@
 #include "lvgl.h"
 #include "esp_camera.h"
 #include "esp_timer.h"
-#include "esp_netif.h"
 #include "cam_config.h"
 #include "string.h"
 #include "sys/socket.h"
 #include "lwip/inet.h"
+
+/* 英文垃圾标签 → 中文 */
+static const char *label_to_chinese(const char *en)
+{
+    if (strcmp(en, "Plastic Bottle") == 0)  return "塑料瓶";
+    if (strcmp(en, "Glass Bottle") == 0)    return "玻璃瓶";
+    if (strcmp(en, "Can") == 0)             return "易拉罐";
+    if (strcmp(en, "Cardboard") == 0)       return "纸箱";
+    if (strcmp(en, "Apple Core") == 0)      return "苹果核";
+    if (strcmp(en, "Banana Peel") == 0)     return "香蕉皮";
+    if (strcmp(en, "Tea Leave") == 0)       return "茶叶渣";
+    if (strcmp(en, "Tissue") == 0)          return "纸巾";
+    if (strcmp(en, "Battery") == 0)         return "电池";
+    if (strcmp(en, "Expired Medicine") == 0) return "过期药品";
+    if (strcmp(en, "Plastic Bag") == 0)     return "塑料袋";
+    if (strcmp(en, "Disposable Cutlery") == 0) return "一次性餐具";
+    return en;  /* 找不到就返回原文 */
+}
 
 static const char *TAG = "垃圾应用";
 
@@ -39,30 +56,7 @@ extern uint32_t g_android_ip;
 extern uint16_t g_android_port;
 extern char s_sta_ip[16];
 
-/* ── Camera config (from app_camera.c) ── */
-static void apply_cam_config(void)
-{
-    cam_config_t cfg;
-    cam_config_load(&cfg);
-    sensor_t *s = esp_camera_sensor_get();
-    if (!s) {
-        ESP_LOGW(TAG, "sensor_get failed, cannot apply config");
-        return;
-    }
-
-    s->set_hmirror(s, cfg.mirror);
-    s->set_vflip(s, cfg.flip);
-    s->set_exposure_ctrl(s, 1);
-    s->set_aec_value(s, 300);
-    s->set_whitebal(s, 1);
-    s->set_awb_gain(s, 1);
-    if (cfg.brightness != 0) s->set_brightness(s, cfg.brightness);
-    if (cfg.contrast != 0)   s->set_contrast(s, cfg.contrast);
-    if (cfg.wb_mode != 0)    s->set_wb_mode(s, cfg.wb_mode);
-    if (cfg.ae_level != 0)   s->set_ae_level(s, cfg.ae_level);
-    ESP_LOGI(TAG, "Sensor config applied: qual=%u mir=%u flip=%u",
-             cfg.quality, cfg.mirror, cfg.flip);
-}
+/* ── Camera config (from cam_config shared module) ── */
 
 /* ── State → name map for logging ── */
 static const char *state_name(trash_state_t st) {
@@ -175,7 +169,7 @@ static void start_streaming(void)
         ESP_LOGE(TAG, "Camera init FAILED (will crash soon)");
         return;
     }
-    apply_cam_config();
+    cam_config_apply();
 
     s_udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (s_udp_fd < 0) {
@@ -313,13 +307,16 @@ static void on_trash_cmd(uint8_t cmd, uint16_t seq,
             uint8_t label_len = payload[off++];
             if (off + label_len + 1 > plen) break;
             char label[64];
-            memcpy(label, &payload[off], label_len);
-            label[label_len] = '\0';
-            off += label_len;
-            uint8_t conf = payload[off++];
+                        memcpy(label, &payload[off], label_len);
+                        label[label_len] = '\0';
+                        off += label_len;
+                        uint8_t conf = payload[off++];
 
-            char line[80];
-            snprintf(line, sizeof(line), "%d. %s %d%%\n", i + 1, label, conf);
+                        /* 英文标签 → 中文 */
+                        const char *zh = label_to_chinese(label);
+
+                        char line[80];
+                        snprintf(line, sizeof(line), "%d. %s %d%%\n", i + 1, zh, conf);
             strncat(buf, line, sizeof(buf) - strlen(buf) - 1);
         }
 
@@ -338,35 +335,6 @@ static void on_trash_cmd(uint8_t cmd, uint16_t seq,
 
 /* ── APP lifecycle ── */
 
-/* 从 STA 网口获取 IP（同 Camera app 做法，不依赖 s_sta_ip 全局变量） */
-static const char *get_sta_ip_str(void)
-{
-    static char buf[16] = "0.0.0.0";
-    esp_netif_t *sta = NULL;
-    esp_netif_t *ap  = NULL;
-    for (esp_netif_t *n = esp_netif_next(NULL); n; n = esp_netif_next(n)) {
-        const char *key = esp_netif_get_ifkey(n);
-        if (key && strstr(key, "工作站"))  sta = n;
-        if (key && strstr(key, "AP"))   ap  = n;
-    }
-    if (sta) {
-        esp_netif_ip_info_t ip;
-        if (esp_netif_get_ip_info(sta, &ip) == ESP_OK && ip.ip.addr != 0) {
-            snprintf(buf, sizeof(buf), IPSTR, IP2STR(&ip.ip));
-            return buf;
-        }
-    }
-    for (esp_netif_t *n = esp_netif_next(NULL); n; n = esp_netif_next(n)) {
-        if (n == ap) continue;
-        esp_netif_ip_info_t ip;
-        if (esp_netif_get_ip_info(n, &ip) == ESP_OK && ip.ip.addr != 0) {
-            snprintf(buf, sizeof(buf), IPSTR, IP2STR(&ip.ip));
-            break;
-        }
-    }
-    return buf;
-}
-
 /* 每 2 秒刷新 IP 标签 */
 static void ip_refresh_cb(lv_timer_t *t)
 {
@@ -374,7 +342,7 @@ static void ip_refresh_cb(lv_timer_t *t)
     if (s_page) {
         lv_obj_t *ip = lv_obj_get_child(s_page, 0);
         if (ip) {
-            const char *ip_str = get_sta_ip_str();
+            const char *ip_str = cam_config_get_sta_ip();
             ESP_LOGI(TAG, "IP refresh: %s", ip_str);
             lv_label_set_text(ip, ip_str);
         }
@@ -392,7 +360,7 @@ static void on_create(lv_obj_t *parent)
 
     /* IP label (top) */
     lv_obj_t *ip = lv_label_create(s_page);
-    lv_label_set_text(ip, get_sta_ip_str());
+    lv_label_set_text(ip, cam_config_get_sta_ip());
     lv_obj_set_style_text_color(ip, lv_color_make(100, 200, 255), LV_STATE_DEFAULT);
     lv_obj_set_style_text_align(ip, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
     lv_obj_align(ip, LV_ALIGN_TOP_MID, 0, 4);
@@ -422,7 +390,7 @@ static void on_create(lv_obj_t *parent)
     s_trash_mode_sent = false;
     s_wait_android_timer = lv_timer_create(try_start_stream, 200, NULL);
     s_ip_refresh_timer = lv_timer_create(ip_refresh_cb, 2000, NULL);
-    ESP_LOGI(TAG, "on_create done, IP=%s", get_sta_ip_str());
+    ESP_LOGI(TAG, "on_create done, IP=%s", cam_config_get_sta_ip());
 }
 
 static void on_destroy(void)

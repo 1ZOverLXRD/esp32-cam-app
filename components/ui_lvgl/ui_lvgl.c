@@ -96,6 +96,10 @@ esp_err_t ui_lvgl_init(void)
         &cn_font_16);
     if (theme) lv_disp_set_theme(s_disp, theme);
 
+    /* 关键：强制屏幕基础样式继承中文字体
+       LVGL 默认 label 不设 font → 查父级 → 查到 lv_scr_act() 上的 font → 生效 */
+    lv_obj_set_style_text_font(lv_scr_act(), &cn_font_16, 0);
+
     xTaskCreatePinnedToCore(lvgl_tick_task, "lv_tick", 2048, NULL, 1, NULL, 1);
 
     ESP_LOGI(TAG, "LVGL initialized: %dx%d, full_refresh PSRAM buffer",

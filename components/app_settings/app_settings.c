@@ -10,6 +10,9 @@
 #include <string.h>
 #include <stdio.h>
 
+/* 引入中文字体 */
+LV_FONT_DECLARE(cn_font_16);
+
 static const char *TAG = "设置应用";
 
 /* 外部标志：通知ui_main.c不要触发退出 */
@@ -168,7 +171,7 @@ static lv_obj_t *create_sub_item(lv_obj_t *parent, const char *text, int y_pos)
     lv_obj_t *label = lv_label_create(item);
     lv_label_set_text(label, text);
     lv_obj_set_style_text_color(label, lv_color_white(), LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(label, lv_font_default(), LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(label, &cn_font_16, LV_STATE_DEFAULT);
     lv_obj_set_width(label, 200);
     lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
     lv_obj_align(label, LV_ALIGN_LEFT_MID, 14, 0);
