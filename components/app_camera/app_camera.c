@@ -49,7 +49,6 @@ static bool s_skip_press = false;     // LONG_PRESS 退出后跳过首次 PRESS
 #define FOCUS_STREAM 0
 #define FOCUS_TFT    1
 
-/* ===================== 焦点样式 ===================== */
 
 static void update_focus_style(void)
 {
@@ -68,7 +67,6 @@ static void update_focus_style(void)
     }
 }
 
-/* ===================== 摄像头初始化 ===================== */
 
 static esp_err_t init_camera(framesize_t size, pixformat_t fmt)
 {
@@ -118,7 +116,6 @@ static esp_err_t init_camera(framesize_t size, pixformat_t fmt)
     return ret;
 }
 
-/* ===================== TFT 模式定时器回调 ===================== */
 
 static void cam_timer_cb(lv_timer_t *t)
 {
@@ -136,7 +133,6 @@ static void cam_timer_cb(lv_timer_t *t)
     esp_camera_fb_return(fb);
 }
 
-/* ===================== UDP 推流任务 ===================== */
 
 static void stream_task(void *arg)
 {
@@ -212,7 +208,6 @@ static void stream_task(void *arg)
     }
 }
 
-/* ===================== 进入推流 / TFT 模式 ===================== */
 
 /* 前向声明 */
 static void stop_camera(void);
@@ -338,7 +333,6 @@ static void enter_tft_mode(void)
     ESP_LOGI(TAG, "本地模式已启动");
 }
 
-/* ===================== 停止摄像头 ===================== */
 
 static void stop_camera(void)
 {
@@ -362,7 +356,6 @@ static void stop_camera(void)
     ESP_LOGI(TAG, "相机已停止");
 }
 
-/* ===================== 重建模式选择 UI ===================== */
 
 static void rebuild_mode_ui(void)
 {
@@ -409,7 +402,6 @@ static void rebuild_mode_ui(void)
     lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -16);
 }
 
-/* ===================== APP 生命周期 ===================== */
 
 
 
@@ -466,7 +458,6 @@ static void on_joystick(joystick_evt_t evt)
         return;
     }
 
-    /* ── 模式选择界面 ── */
     switch (evt) {
         case JOY_EVT_UP:
         case JOY_EVT_LEFT:   // XY互换：物理推UP/DOWN→LEFT/RIGHT

@@ -74,7 +74,6 @@ esp_err_t cam_config_save(const cam_config_t *cfg)
     return err;
 }
 
-/* ── 应用 NVS 参数到已初始化的传感器 ── */
 void cam_config_apply(void)
 {
     cam_config_t cfg;
@@ -98,7 +97,6 @@ void cam_config_apply(void)
              cfg.quality, cfg.mirror, cfg.flip);
 }
 
-/* ── 获取 STA 网口 IP（跳过 AP） ── */
 const char *cam_config_get_sta_ip(void)
 {
     static char buf[16] = "0.0.0.0";

@@ -29,7 +29,6 @@ static const char *label_to_chinese(const char *en)
 
 static const char *TAG = "垃圾应用";
 
-/* ── State ── */
 typedef enum {
     TRASH_IDLE,
     TRASH_STREAMING,
@@ -50,15 +49,12 @@ static int s_udp_fd = -1;
 static TaskHandle_t s_stream_task = NULL;
 static uint32_t s_frame_id = 0;
 
-/* ── Externs ── */
 extern volatile int g_android_connected;
 extern uint32_t g_android_ip;
 extern uint16_t g_android_port;
 extern char s_sta_ip[16];
 
-/* ── Camera config (from cam_config shared module) ── */
 
-/* ── State → name map for logging ── */
 static const char *state_name(trash_state_t st) {
     switch (st) {
         case TRASH_IDLE:      return "空闲";
@@ -69,7 +65,6 @@ static const char *state_name(trash_state_t st) {
     }
 }
 
-/* ── UDP stream task (from app_camera.c) ── */
 static void stream_task(void *arg)
 {
     (void)arg;
@@ -131,7 +126,6 @@ static void stream_task(void *arg)
     }
 }
 
-/* ── Start / Stop streaming ── */
 static void start_streaming(void)
 {
     ESP_LOGI(TAG, "start_streaming: state=%s streaming=%d",
@@ -203,7 +197,6 @@ static void stop_streaming(void)
     ESP_LOGI(TAG, "推流已停止");
 }
 
-/* ── Wait for Android then send TrashMode and start stream ── */
 static void try_start_stream(lv_timer_t *t)
 {
     (void)t;
@@ -250,7 +243,6 @@ static void try_start_stream(lv_timer_t *t)
     ESP_LOGI(TAG, "try_start_stream done -> STREAMING");
 }
 
-/* ── Command callback (comms_server 0x20-0x4F routing) ── */
 static void on_trash_cmd(uint8_t cmd, uint16_t seq,
                           const uint8_t *payload, uint32_t plen)
 {
@@ -333,7 +325,6 @@ static void on_trash_cmd(uint8_t cmd, uint16_t seq,
     }
 }
 
-/* ── APP lifecycle ── */
 
 /* 每 2 秒刷新 IP 标签 */
 static void ip_refresh_cb(lv_timer_t *t)

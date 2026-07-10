@@ -74,28 +74,24 @@ static void on_create(lv_obj_t *parent)
     lv_obj_set_style_bg_grad_color(s_page, lv_color_make(0, 50, 150), LV_STATE_DEFAULT);
     lv_obj_set_style_bg_grad_dir(s_page, LV_GRAD_DIR_VER, LV_STATE_DEFAULT);
 
-    /* ─── 城市名（顶部居中） ─── */
     s_city_label = lv_label_create(s_page);
     lv_label_set_text(s_city_label, "天气");
     lv_obj_set_style_text_color(s_city_label, lv_color_make(200, 220, 255), LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(s_city_label, &cn_font_16, LV_STATE_DEFAULT);
     lv_obj_align(s_city_label, LV_ALIGN_TOP_MID, 0, 6);
 
-    /* ─── 温度（大号居中） ─── */
     s_temp_label = lv_label_create(s_page);
     lv_label_set_text(s_temp_label, "请求中...");
     lv_obj_set_style_text_color(s_temp_label, lv_color_white(), LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(s_temp_label, &cn_font_16, LV_STATE_DEFAULT);
     lv_obj_align(s_temp_label, LV_ALIGN_CENTER, 0, -30);
 
-    /* ─── 天气状况 ─── */
     s_cond_label = lv_label_create(s_page);
     lv_label_set_text(s_cond_label, "等待连接...");
     lv_obj_set_style_text_color(s_cond_label, lv_color_make(200, 220, 255), LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(s_cond_label, &cn_font_16, LV_STATE_DEFAULT);
     lv_obj_align(s_cond_label, LV_ALIGN_CENTER, 0, 5);
 
-    /* ─── 额外信息 ─── */
     s_extra_label = lv_label_create(s_page);
     lv_label_set_text(s_extra_label, "");
     lv_obj_set_style_text_color(s_extra_label, lv_color_make(160, 180, 210), LV_STATE_DEFAULT);

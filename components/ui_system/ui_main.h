@@ -4,7 +4,6 @@
 #include "esp_err.h"
 #include "joystick.h"
 
-/* ===== 全局状态栈 ===== */
 #define UI_STATE_MAINMENU 0
 #define UI_STATE_APP      1
 #define UI_STATE_SUB      2

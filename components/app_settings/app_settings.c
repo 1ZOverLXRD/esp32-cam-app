@@ -224,7 +224,6 @@ static void navigate(int dir)
     lv_obj_scroll_to_y(s_page, s_selected * (HEADER_H + ITEM_GAP) - 20, LV_ANIM_ON);
 }
 
-/* ===== 塌缩弧进度指示 ===== */
 static void set_opa(lv_obj_t *obj, int16_t v)
 {
     lv_obj_set_style_opa(obj, v, LV_STATE_DEFAULT);
@@ -365,7 +364,6 @@ static void cleanup_arc_for_destroy(void)
     cancel_collapse_arc(1);
 }
 
-/* ── 重连超时回调（5 秒后检查结果并更新 TFT） ── */
 static void reconnect_timeout_cb(TimerHandle_t t)
 {
     (void)t;
@@ -381,7 +379,6 @@ static void reconnect_timeout_cb(TimerHandle_t t)
     }
 }
 
-/* ── 从 NVS 读取上次凭据并重连 WiFi ── */
 static void wifi_reconnect_last(void)
 {
     nvs_handle_t nvs;
@@ -425,7 +422,6 @@ static void wifi_reconnect_last(void)
     ESP_LOGI(TAG, "Reconnect initiated, AP closed, STA connecting...");
 }
 
-/* ── Camera Config 编辑 ── */
 
 static void modify_cam_cfg(int idx, int delta)
 {
@@ -620,7 +616,6 @@ static void on_joystick(joystick_evt_t evt)
     case JOY_EVT_RIGHT:
     case JOY_EVT_UP:
     case JOY_EVT_DOWN: {
-        /* ── Camera Config 编辑态：LEFT=减, RIGHT=增, UP/DOWN 同样映射（XY互换） ── */
         if (top == UI_STATE_SUB && s_selected == 0 && s_editing >= 0) {
             int delta = (evt == JOY_EVT_LEFT || evt == JOY_EVT_UP) ? -1 : 1;
             modify_cam_cfg(s_editing, delta);
@@ -657,7 +652,6 @@ static void on_joystick(joystick_evt_t evt)
             s_skip_press = 0;
             break;
         }
-        /* ── Camera Config 编辑态 ── */
         if (top == UI_STATE_SUB && s_selected == 0) {
             if (s_editing >= 0) {
                 /* PRESS确认→写NVS→退出编辑 */
